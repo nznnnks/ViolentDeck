@@ -1,0 +1,31 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ViolentDeck — Магазин</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="app-header">
+    <button class="ghost-button">Корзина</button>
+    <div class="brand-name">ViolentDeck</div>
+    <a class="ghost-button" href="{{ url_for('logout') }}">Выход</a>
+  </header>
+  <main class="shop-main">
+    <section class="cards">
+      {% for product in products %}
+        <article class="card">
+          <figure class="card-media">
+            <img class="card-img" src="{{ url_for('static', filename=product.image) }}" alt="{{ product.title }}">
+          </figure>
+          <p class="card-tag">{{ product.accent.upper() }}</p>
+          <h2>{{ product.title }}</h2>
+          <p>{{ product.description }}</p>
+          <button class="primary card-button">Подробнее</button>
+        </article>
+      {% endfor %}
+    </section>
+  </main>
+</body>
+</html>

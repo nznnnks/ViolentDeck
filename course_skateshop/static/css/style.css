@@ -1,0 +1,164 @@
+﻿:root {
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  background: #050505;
+  color: #f4f4f5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: inherit;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.auth-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+}
+
+.auth-page header h1 {
+  margin: 0.3rem 0;
+  font-size: 2.5rem;
+}
+
+.form-row {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.form-card {
+  padding: 1.75rem;
+  background: #111;
+  border-radius: 0.75rem;
+  border: 1px solid #27272a;
+}
+
+.form-card label {
+  display: block;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+input {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.5rem;
+  border: 1px solid #323238;
+  background: #0d0d0d;
+  color: inherit;
+}
+
+.primary {
+  width: 100%;
+  border: none;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: #fff;
+  padding: 0.75rem;
+  border-radius: 0.6rem;
+  cursor: pointer;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+}
+
+.flash-box {
+  max-width: 960px;
+  margin: 0 auto;
+  background: #1f1f1f;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #323238;
+  color: #c4b5fd;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 2rem;
+  background: #0a0a0a;
+  border-bottom: 1px solid #1c1c1c;
+}
+
+.brand-name {
+  font-size: 1.4rem;
+  letter-spacing: 0.4em;
+}
+
+.ghost-button {
+  background: transparent;
+  border: 1px solid #a855f7;
+  border-radius: 999px;
+  padding: 0.35rem 1rem;
+  color: #a855f7;
+  cursor: pointer;
+}
+
+.link-button {
+  display: inline-flex;
+  justify-content: center;
+  margin-top: 0.75rem;
+  width: 100%;
+}
+
+.shop-main {
+  padding: 2rem;
+}
+
+.cards {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.card {
+  background: #111;
+  border: 1px solid #1f1f1f;
+  border-radius: 1rem;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.card-media {
+  border-radius: 0.75rem;
+  overflow: hidden;
+  margin: 0;
+}
+
+.card-img {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+  display: block;
+}
+
+.card-tag {
+  color: #c4b5fd;
+  font-size: 0.8rem;
+  letter-spacing: 0.5em;
+  text-transform: uppercase;
+}
+
+.card-button {
+  margin-top: auto;
+  border: none;
+  background: none;
+  color: #c4b5fd;
+  font-weight: 600;
+  cursor: pointer;
+}

@@ -1,0 +1,34 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ViolentDeck — Авторизация</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <main class="auth-page">
+    <header>
+      <p class="eyebrow">Добро пожаловать в тестовый скейт-шоп</p>
+      <h1>ViolentDeck</h1>
+      <p class="subtitle">Для доступа используйте <strong>{{ default_user.username }}</strong> / <strong>{{ default_user.password }}</strong> или зарегистрируйтесь.</p>
+    </header>
+    <section class="form-row">
+      <form class="form-card" action="{{ url_for('login') }}" method="post">
+        <label>
+          Имя пользователя
+          <input name="login_username" type="text" placeholder="violent" required>
+        </label>
+        <label>
+          Пароль
+          <input name="login_password" type="password" placeholder="deck123" required>
+        </label>
+        <div class="actions">
+          <button type="submit" class="primary">Войти</button>
+          <a class="ghost-button link-button" href="{{ url_for('register') }}">Регистрация</a>
+        </div>
+      </form>
+    </section>
+  </main>
+</body>
+</html>
