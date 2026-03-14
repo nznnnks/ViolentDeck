@@ -2,45 +2,62 @@
 
 ## Запуск (Windows / PowerShell)
 
-1) Перейдите в папку проекта:
+1. Перейдите в папку проекта:
 
 ```powershell
-cd e:\course_task
+cd E:\course_task
 ```
 
-2) Активируйте виртуальное окружение:
+2. Активируйте виртуальное окружение:
 
 ```powershell
 .\venv\Scripts\Activate.ps1
 ```
 
-3) Установите зависимости:
+3. Установите зависимости:
 
 ```powershell
 python -m pip install -r .\course_skateshop\requirements.txt
 ```
 
-4) Запустите приложение:
+## PostgreSQL
 
-```powershell
-python .\course_skateshop\app.py
+Перед первым запуском создайте в PostgreSQL отдельную базу данных:
+
+```sql
+CREATE DATABASE course_skateshop;
 ```
 
-5) Откройте в браузере:
+Приложение само создаст внутри неё таблицу `users` при старте.
 
-- `http://127.0.0.1:5000`
+4. Укажите строку подключения к PostgreSQL:
 
-## Данные для входа
+```powershell
+$env:DATABASE_URL = "postgresql+psycopg://postgres:ВАШ_ПАРОЛЬ@localhost:5432/course_skateshop"
+```
 
-- Логин: `violent`
-- Пароль: `deck123`
-
-## Опционально
-
-- Секрет для сессий (если нужно заменить дефолтный):
+5. При необходимости задайте секрет для сессий:
 
 ```powershell
 $env:VIOLENTDECK_SECRET = "your-secret"
+```
+
+6. Запустите приложение:
+
+```powershell
 python .\course_skateshop\app.py
 ```
 
+7. Откройте в браузере:
+
+- `http://127.0.0.1:5000`
+
+## Что создаётся автоматически
+
+- таблица `users`
+- стартовый пользователь `violent`
+
+## Данные для входа после первого запуска
+
+- Логин: `violent`
+- Пароль: `deck123`

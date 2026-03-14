@@ -13,28 +13,32 @@
       <h1>Регистрация</h1>
       <p class="subtitle">Создай аккаунт, чтобы управлять покупками и списками.</p>
     </header>
-    {% if get_flashed_messages() %}
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
       <div class="flash-box">
-        {% for message in get_flashed_messages() %}
+        {% for message in messages %}
           <p>{{ message }}</p>
         {% endfor %}
       </div>
     {% endif %}
+    {% endwith %}
     <section class="form-row">
       <form class="form-card" action="{{ url_for('register') }}" method="post">
         <label>
-          Имя пользователя
-          <input name="register_username" type="text" placeholder="violent" required>
-        </label>
-        <label>
-          Email
-          <input name="register_email" type="email" placeholder="you@example.com" required>
+          Логин
+          <input name="register_username" type="text" placeholder="Введите логин" required>
         </label>
         <label>
           Пароль
           <input name="register_password" type="password" minlength="6" placeholder="••••••" required>
         </label>
+        <label>
+          Почта
+          <input name="register_email" type="email" placeholder="you@example.com" required>
+        </label>
         <button type="submit" class="primary">Зарегистрироваться</button>
+        <p class="subtitle">Уже есть аккаунт?</p>
+        <a class="ghost-button link-button" href="{{ url_for('auth_page') }}">Войти</a>
       </form>
     </section>
   </main>

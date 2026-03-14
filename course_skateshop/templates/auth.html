@@ -9,24 +9,34 @@
 <body>
   <main class="auth-page">
     <header>
-      <p class="eyebrow">Добро пожаловать в тестовый скейт-шоп</p>
+      <p class="eyebrow">Добро пожаловать</p>
       <h1>ViolentDeck</h1>
-      <p class="subtitle">Для доступа используйте <strong>{{ default_user.username }}</strong> / <strong>{{ default_user.password }}</strong> или зарегистрируйтесь.</p>
+      <p class="subtitle">Войдите в аккаунт, чтобы перейти в магазин.</p>
     </header>
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash-box">
+        {% for message in messages %}
+          <p>{{ message }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% endwith %}
     <section class="form-row">
       <form class="form-card" action="{{ url_for('login') }}" method="post">
         <label>
-          Имя пользователя
-          <input name="login_username" type="text" placeholder="violent" required>
+          Логин
+          <input name="login_username" type="text" placeholder="Введите логин" required>
         </label>
         <label>
           Пароль
-          <input name="login_password" type="password" placeholder="deck123" required>
+          <input name="login_password" type="password" placeholder="Введите пароль" required>
         </label>
         <div class="actions">
           <button type="submit" class="primary">Войти</button>
-          <a class="ghost-button link-button" href="{{ url_for('register') }}">Регистрация</a>
         </div>
+        <p class="subtitle">Нет аккаунта?</p>
+        <a class="ghost-button link-button" href="{{ url_for('register') }}">Зарегистрироваться</a>
       </form>
     </section>
   </main>

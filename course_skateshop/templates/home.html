@@ -13,6 +13,15 @@
     <a class="ghost-button" href="{{ url_for('logout') }}">Выход</a>
   </header>
   <main class="shop-main">
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash-box">
+        {% for message in messages %}
+          <p>{{ message }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% endwith %}
     <section class="cards">
       {% for product in products %}
         <article class="card">
