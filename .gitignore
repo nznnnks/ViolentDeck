@@ -1,0 +1,5 @@
+course_skateshop/settings.py
+venv/
+__pycache__/
+*.pyc
+.env

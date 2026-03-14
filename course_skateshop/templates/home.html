@@ -8,7 +8,10 @@
 </head>
 <body>
   <header class="app-header">
-    <button class="ghost-button">Корзина</button>
+    <div class="header-actions">
+      <button class="ghost-button">Корзина</button>
+      <a class="ghost-button" href="{{ url_for('profile') }}">Профиль</a>
+    </div>
     <div class="brand-name">ViolentDeck</div>
     <a class="ghost-button" href="{{ url_for('logout') }}">Выход</a>
   </header>

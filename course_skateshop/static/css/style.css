@@ -19,6 +19,10 @@ input {
   font: inherit;
 }
 
+a {
+  text-decoration: none;
+}
+
 .auth-page {
   max-width: 960px;
   margin: 0 auto;
@@ -93,6 +97,12 @@ input {
   border-bottom: 1px solid #1c1c1c;
 }
 
+.header-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
 .brand-name {
   font-size: 1.4rem;
   letter-spacing: 0.4em;
@@ -107,6 +117,10 @@ input {
   cursor: pointer;
 }
 
+.full-width-button {
+  width: 100%;
+}
+
 .link-button {
   display: inline-flex;
   justify-content: center;
@@ -114,8 +128,45 @@ input {
   width: 100%;
 }
 
+.code-input {
+  letter-spacing: 0.45em;
+  text-align: center;
+  font-size: 1.1rem;
+}
+
 .shop-main {
   padding: 2rem;
+}
+
+.profile-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+}
+
+.profile-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.profile-card {
+  background: #111;
+  border: 1px solid #1f1f1f;
+  border-radius: 1rem;
+  padding: 1.5rem;
+}
+
+.profile-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid #1f1f1f;
+}
+
+.profile-item:last-child {
+  border-bottom: none;
 }
 
 .cards {

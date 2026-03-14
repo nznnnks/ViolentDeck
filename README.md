@@ -30,6 +30,8 @@ CREATE DATABASE course_skateshop;
 
 Приложение само создаст внутри неё таблицу `users` при старте.
 
+Настройки отправки писем лежат в `E:\course_task\course_skateshop\settings.py`.
+
 4. Укажите строку подключения к PostgreSQL:
 
 ```powershell
@@ -56,6 +58,7 @@ python .\course_skateshop\app.py
 
 - таблица `users`
 - стартовый пользователь `violent`
+- поля подтверждения почты для новых аккаунтов
 
 ## Данные для входа после первого запуска
 
