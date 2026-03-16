@@ -44,22 +44,31 @@ DEFAULT_USER = {
 
 PRODUCT_CARDS = [
     {
+        "slug": "skateboards",
         "title": "Скейтборды",
-        "description": "Стабильные деки, качественные подвески и колеса для любых трюков.",
+        "description": "Стабильные деки, качественные подвески и колёса для любых трюков.",
         "accent": "скейты",
         "image": "images/skate.png",
+        "empty_title": "Товары скоро появятся",
+        "empty_description": "Мы уже готовим каталог скейтбордов. Загляните сюда позже.",
     },
     {
+        "slug": "clothing",
         "title": "Одежда",
         "description": "Свободные худи, футболки и шорты из прочных материалов streetwear-класса.",
         "accent": "одежда",
         "image": "images/clothing.png",
+        "empty_title": "Коллекция в подготовке",
+        "empty_description": "Одежда для каталога скоро появится на этой странице.",
     },
     {
+        "slug": "accessories",
         "title": "Аксессуары",
-        "description": "Подшипники, сменные колеса, инструменты и элементы защиты.",
+        "description": "Подшипники, сменные колёса, инструменты и элементы защиты.",
         "accent": "аксессуары",
         "image": "images/accessories.png",
+        "empty_title": "Раздел заполняется",
+        "empty_description": "Скоро здесь появятся аксессуары для вашего сетапа.",
     },
 ]
 
@@ -188,6 +197,10 @@ def get_user_by_email(email: str | None) -> User | None:
 
     with SessionLocal() as db_session:
         return db_session.scalar(select(User).where(User.email == email))
+
+
+def get_category_by_slug(slug: str) -> dict | None:
+    return next((category for category in PRODUCT_CARDS if category["slug"] == slug), None)
 
 
 def is_authenticated() -> bool:
@@ -502,6 +515,25 @@ def shop():
         "home.html",
         user={"username": user.username, "email": user.email},
         products=PRODUCT_CARDS,
+    )
+
+
+@app.route("/shop/category/<slug>")
+def category_page(slug: str):
+    user = get_user_by_username(session.get("user"))
+    if user is None or not user.is_verified:
+        session.pop("user", None)
+        return redirect(url_for("auth_page"))
+
+    category = get_category_by_slug(slug)
+    if category is None:
+        flash("Категория не найдена.")
+        return redirect(url_for("shop"))
+
+    return render_template(
+        "category.html",
+        user={"username": user.username, "email": user.email},
+        category=category,
     )
 
 

@@ -1,21 +1,21 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ViolentDeck — Магазин</title>
+  <title>ViolentDeck — {{ category.title }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
   <header class="app-header">
     <div class="header-actions">
-      <button class="ghost-button">Корзина</button>
+      <a class="ghost-button" href="{{ url_for('shop') }}">Назад в магазин</a>
       <a class="ghost-button" href="{{ url_for('profile') }}">Профиль</a>
     </div>
     <div class="brand-name">ViolentDeck</div>
     <a class="ghost-button" href="{{ url_for('logout') }}">Выход</a>
   </header>
-  <main class="shop-main">
+  <main class="category-page">
     {% with messages = get_flashed_messages() %}
     {% if messages %}
       <div class="flash-box">
@@ -25,18 +25,17 @@
       </div>
     {% endif %}
     {% endwith %}
-    <section class="cards">
-      {% for product in products %}
-        <article class="card">
-          <figure class="card-media">
-            <img class="card-img" src="{{ url_for('static', filename=product.image) }}" alt="{{ product.title }}">
-          </figure>
-          <p class="card-tag">{{ product.accent.upper() }}</p>
-          <h2>{{ product.title }}</h2>
-          <p>{{ product.description }}</p>
-          <a class="primary card-button" href="{{ url_for('category_page', slug=product.slug) }}">Подробнее</a>
-        </article>
-      {% endfor %}
+    <section class="category-hero">
+      <div>
+        <p class="eyebrow">{{ category.accent.upper() }}</p>
+        <h1>{{ category.title }}</h1>
+        <p class="subtitle">{{ category.description }}</p>
+      </div>
+      <img class="category-image" src="{{ url_for('static', filename=category.image) }}" alt="{{ category.title }}">
+    </section>
+    <section class="empty-state-card">
+      <h2>{{ category.empty_title }}</h2>
+      <p>{{ category.empty_description }}</p>
     </section>
   </main>
 </body>
