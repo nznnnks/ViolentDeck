@@ -9,8 +9,11 @@
 <body>
   <header class="app-header">
     <div class="header-actions">
-      <button class="ghost-button">Корзина</button>
+      <button class="ghost-button" type="button">Корзина</button>
       <a class="ghost-button" href="{{ url_for('profile') }}">Профиль</a>
+      {% if user.role == 'admin' %}
+      <a class="ghost-button" href="{{ url_for('admin_dashboard') }}">Админ-панель</a>
+      {% endif %}
     </div>
     <div class="brand-name">ViolentDeck</div>
     <a class="ghost-button" href="{{ url_for('logout') }}">Выход</a>

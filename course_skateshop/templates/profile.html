@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
@@ -10,6 +10,9 @@
   <header class="app-header">
     <div class="header-actions">
       <a class="ghost-button" href="{{ url_for('shop') }}">Магазин</a>
+      {% if user.role == 'admin' %}
+      <a class="ghost-button" href="{{ url_for('admin_dashboard') }}">Админ-панель</a>
+      {% endif %}
     </div>
     <div class="brand-name">ViolentDeck</div>
     <a class="ghost-button" href="{{ url_for('logout') }}">Выход</a>
@@ -35,6 +38,10 @@
         <div class="profile-item">
           <span>Почта</span>
           <strong>{{ user.email }}</strong>
+        </div>
+        <div class="profile-item">
+          <span>Роль</span>
+          <strong>{{ 'Администратор' if user.role == 'admin' else 'Пользователь' }}</strong>
         </div>
       </article>
       <article class="profile-card">

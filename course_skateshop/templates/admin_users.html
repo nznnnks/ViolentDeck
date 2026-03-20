@@ -1,0 +1,86 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ViolentDeck — Управление пользователями</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-actions">
+      <a class="ghost-button" href="{{ url_for('admin_dashboard') }}">Админ-панель</a>
+      <a class="ghost-button" href="{{ url_for('admin_products') }}">Товары</a>
+    </div>
+    <div class="brand-name">ViolentDeck</div>
+    <a class="ghost-button" href="{{ url_for('logout') }}">Выход</a>
+  </header>
+  <main class="admin-page">
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash-box">
+        {% for message in messages %}
+          <p>{{ message }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% endwith %}
+    <section class="admin-card">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Пользователи</p>
+          <h1>Управление аккаунтами</h1>
+        </div>
+        <span class="pagination-label">Всего: {{ total }}</span>
+      </div>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Логин</th>
+              <th>Почта</th>
+              <th>Роль</th>
+              <th>Подтверждён</th>
+              <th>Новый пароль</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in users %}
+            <tr>
+              <form action="{{ url_for('admin_update_user', user_id=item.id) }}" method="post">
+                <td>{{ item.id }}<input type="hidden" name="page" value="{{ page }}"></td>
+                <td><input name="username" type="text" value="{{ item.username }}" required></td>
+                <td><input name="email" type="email" value="{{ item.email }}" required></td>
+                <td>
+                  <select name="role">
+                    <option value="customer" {% if item.role != 'admin' %}selected{% endif %}>Пользователь</option>
+                    <option value="admin" {% if item.role == 'admin' %}selected{% endif %}>Администратор</option>
+                  </select>
+                </td>
+                <td>
+                  <label class="checkbox-field">
+                    <input name="is_verified" type="checkbox" {% if item.is_verified %}checked{% endif %}>
+                    <span>Да</span>
+                  </label>
+                </td>
+                <td><input name="new_password" type="password" placeholder="Не менять"></td>
+                <td><button type="submit" class="primary compact-button">Сохранить</button></td>
+              </form>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% if total_pages > 1 %}
+    <nav class="pagination-bar">
+      <a class="ghost-button{% if page == 1 %} disabled-link{% endif %}" href="{{ url_for('admin_users', page=page-1) if page > 1 else '#' }}">Назад</a>
+      <span class="pagination-label">Страница {{ page }} из {{ total_pages }}</span>
+      <a class="ghost-button{% if page == total_pages %} disabled-link{% endif %}" href="{{ url_for('admin_users', page=page+1) if page < total_pages else '#' }}">Далее</a>
+    </nav>
+    {% endif %}
+  </main>
+</body>
+</html>

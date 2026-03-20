@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
@@ -11,6 +11,9 @@
     <div class="header-actions">
       <a class="ghost-button" href="{{ url_for('shop') }}">Назад в магазин</a>
       <a class="ghost-button" href="{{ url_for('profile') }}">Профиль</a>
+      {% if user.role == 'admin' %}
+      <a class="ghost-button" href="{{ url_for('admin_dashboard') }}">Админ-панель</a>
+      {% endif %}
     </div>
     <div class="brand-name">ViolentDeck</div>
     <a class="ghost-button" href="{{ url_for('logout') }}">Выход</a>
@@ -33,10 +36,32 @@
       </div>
       <img class="category-image" src="{{ url_for('static', filename=category.image) }}" alt="{{ category.title }}">
     </section>
+    {% if products %}
+    <section class="catalog-grid">
+      {% for product in products %}
+      <article class="product-card">
+        <img class="product-card-image" src="{{ get_image_source(product.image_url) }}" alt="{{ product.name }}">
+        <div class="product-card-body">
+          <h2>{{ product.name }}</h2>
+          <p>{{ product.description }}</p>
+          <strong class="price-label">{{ '%.2f'|format(product.price) }} ₽</strong>
+        </div>
+      </article>
+      {% endfor %}
+    </section>
+    {% else %}
     <section class="empty-state-card">
       <h2>{{ category.empty_title }}</h2>
       <p>{{ category.empty_description }}</p>
     </section>
+    {% endif %}
+    {% if total_pages > 1 %}
+    <nav class="pagination-bar">
+      <a class="ghost-button{% if page == 1 %} disabled-link{% endif %}" href="{{ url_for('category_page', slug=category.slug, page=page-1) if page > 1 else '#' }}">Назад</a>
+      <span class="pagination-label">Страница {{ page }} из {{ total_pages }}</span>
+      <a class="ghost-button{% if page == total_pages %} disabled-link{% endif %}" href="{{ url_for('category_page', slug=category.slug, page=page+1) if page < total_pages else '#' }}">Далее</a>
+    </nav>
+    {% endif %}
   </main>
 </body>
 </html>

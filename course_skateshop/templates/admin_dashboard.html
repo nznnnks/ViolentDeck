@@ -1,0 +1,55 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ViolentDeck — Админ-панель</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-actions">
+      <a class="ghost-button" href="{{ url_for('shop') }}">Магазин</a>
+      <a class="ghost-button" href="{{ url_for('profile') }}">Профиль</a>
+    </div>
+    <div class="brand-name">ViolentDeck</div>
+    <a class="ghost-button" href="{{ url_for('logout') }}">Выход</a>
+  </header>
+  <main class="admin-page">
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash-box">
+        {% for message in messages %}
+          <p>{{ message }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% endwith %}
+    <section class="admin-grid">
+      <article class="admin-card">
+        <p class="eyebrow">Обзор</p>
+        <h1>Админ-панель</h1>
+        <div class="profile-item"><span>Пользователи</span><strong>{{ users_count }}</strong></div>
+        <div class="profile-item"><span>Товары</span><strong>{{ products_count }}</strong></div>
+      </article>
+      <article class="admin-card">
+        <p class="eyebrow">Разделы</p>
+        <h2>Категории</h2>
+        {% for category in category_counts %}
+        <div class="profile-item"><span>{{ category.title }}</span><strong>{{ category.count }}</strong></div>
+        {% endfor %}
+      </article>
+    </section>
+    <section class="admin-nav-grid">
+      <a class="admin-link-card" href="{{ url_for('admin_users') }}">
+        <h2>Пользователи</h2>
+        <p>Редактирование логинов, почты, ролей, подтверждения и паролей.</p>
+      </a>
+      <a class="admin-link-card" href="{{ url_for('admin_products') }}">
+        <h2>Товары</h2>
+        <p>Добавление товаров в категории и просмотр каталога с пагинацией.</p>
+      </a>
+    </section>
+  </main>
+</body>
+</html>

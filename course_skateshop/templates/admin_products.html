@@ -1,0 +1,93 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ViolentDeck — Управление товарами</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-actions">
+      <a class="ghost-button" href="{{ url_for('admin_dashboard') }}">Админ-панель</a>
+      <a class="ghost-button" href="{{ url_for('admin_users') }}">Пользователи</a>
+    </div>
+    <div class="brand-name">ViolentDeck</div>
+    <a class="ghost-button" href="{{ url_for('logout') }}">Выход</a>
+  </header>
+  <main class="admin-page">
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash-box">
+        {% for message in messages %}
+          <p>{{ message }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% endwith %}
+    <section class="admin-grid">
+      <article class="admin-card">
+        <p class="eyebrow">Добавление</p>
+        <h1>Новый товар</h1>
+        <form class="admin-form" action="{{ url_for('admin_create_product') }}" method="post">
+          <label>Категория
+            <select name="category_slug" required>
+              {% for category in categories %}
+              <option value="{{ category.slug }}" {% if selected_category == category.slug %}selected{% endif %}>{{ category.title }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Название
+            <input name="name" type="text" placeholder="Например, Deck Zero" required>
+          </label>
+          <label>Описание
+            <textarea name="description" rows="4" placeholder="Описание товара" required></textarea>
+          </label>
+          <label>Фото
+            <input name="image_url" type="text" placeholder="Ссылка или static-путь, например images/skate.png">
+          </label>
+          <label>Цена
+            <input name="price" type="text" placeholder="7990.00" required>
+          </label>
+          <button type="submit" class="primary">Добавить товар</button>
+        </form>
+      </article>
+      <article class="admin-card">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Каталог</p>
+            <h2>Товары</h2>
+          </div>
+          <span class="pagination-label">Всего: {{ total }}</span>
+        </div>
+        <div class="filter-row">
+          <a class="ghost-button{% if selected_category == 'all' %} active-filter{% endif %}" href="{{ url_for('admin_products', category='all') }}">Все</a>
+          {% for category in categories %}
+          <a class="ghost-button{% if selected_category == category.slug %} active-filter{% endif %}" href="{{ url_for('admin_products', category=category.slug) }}">{{ category.title }}</a>
+          {% endfor %}
+        </div>
+        <div class="admin-product-list">
+          {% for product in products %}
+          <article class="admin-product-card">
+            <img class="admin-product-image" src="{{ get_image_source(product.image_url) }}" alt="{{ product.name }}">
+            <div>
+              <p class="card-tag">{{ product.category_slug.upper() }}</p>
+              <h3>{{ product.name }}</h3>
+              <p>{{ product.description }}</p>
+              <strong class="price-label">{{ '%.2f'|format(product.price) }} ₽</strong>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+      </article>
+    </section>
+    {% if total_pages > 1 %}
+    <nav class="pagination-bar">
+      <a class="ghost-button{% if page == 1 %} disabled-link{% endif %}" href="{{ url_for('admin_products', category=selected_category, page=page-1) if page > 1 else '#' }}">Назад</a>
+      <span class="pagination-label">Страница {{ page }} из {{ total_pages }}</span>
+      <a class="ghost-button{% if page == total_pages %} disabled-link{% endif %}" href="{{ url_for('admin_products', category=selected_category, page=page+1) if page < total_pages else '#' }}">Далее</a>
+    </nav>
+    {% endif %}
+  </main>
+</body>
+</html>
