@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ViolentDeck — Корзина</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-actions">
+      <a class="ghost-button" href="{{ url_for('shop') }}">Магазин</a>
+      <a class="ghost-button" href="{{ url_for('profile') }}">Профиль</a>
+    </div>
+    <div class="brand-name">ViolentDeck</div>
+    <a class="ghost-button" href="{{ url_for('logout') }}">Выход</a>
+  </header>
+  <main class="cart-page">
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash-box">
+        {% for message in messages %}
+          <p>{{ message }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% endwith %}
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Корзина</p>
+        <h1>Оформление заказа</h1>
+      </div>
+      <span class="pagination-label">Товаров: {{ cart_items|length }}</span>
+    </div>
+    {% if cart_items %}
+    <section class="cart-layout">
+      <div class="cart-items">
+        {% for item in cart_items %}
+        <article class="cart-item-card">
+          <img class="cart-item-image" src="{{ get_image_source(item.image_url) }}" alt="{{ item.name }}">
+          <div class="cart-item-body">
+            <h2>{{ item.name }}</h2>
+            <p>{{ '%.2f'|format(item.price) }} ₽ за штуку</p>
+            <strong class="price-label">Итого: {{ '%.2f'|format(item.item_total) }} ₽</strong>
+            <div class="cart-actions">
+              <form action="{{ url_for('update_cart_item') }}" method="post" class="cart-qty-form">
+                <input type="hidden" name="product_id" value="{{ item.product_id }}">
+                <input name="quantity" type="number" min="1" value="{{ item.quantity }}" required onchange="this.form.submit()">
+              </form>
+              <form action="{{ url_for('remove_from_cart') }}" method="post">
+                <input type="hidden" name="product_id" value="{{ item.product_id }}">
+                <button type="submit" class="ghost-button">Удалить</button>
+              </form>
+            </div>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+      <aside class="cart-summary">
+        <h2>Доставка</h2>
+        <form class="admin-form" action="{{ url_for('create_order') }}" method="post">
+          <label>Адрес заказа
+            <textarea name="shipping_address" rows="5" placeholder="Город, улица, дом, квартира, индекс" required></textarea>
+          </label>
+          <label>Способ оплаты
+            <select name="payment_method" required>
+              <option value="cash">Наличными при получении</option>
+              <option value="card">Картой при получении</option>
+              <option value="online">Онлайн-оплата</option>
+            </select>
+          </label>
+          <div class="profile-item">
+            <span>Сумма заказа</span>
+            <strong>{{ '%.2f'|format(cart_total) }} ₽</strong>
+          </div>
+          <button type="submit" class="primary">Оформить заказ</button>
+        </form>
+      </aside>
+    </section>
+    {% else %}
+    <section class="empty-state-card">
+      <h2>Корзина пуста</h2>
+      <p>Добавьте товары из категории, чтобы оформить заказ.</p>
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>

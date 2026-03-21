@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ViolentDeck — Заказы</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-actions">
+      <a class="ghost-button" href="{{ url_for('admin_dashboard') }}">Админ-панель</a>
+      <a class="ghost-button" href="{{ url_for('admin_users') }}">Пользователи</a>
+      <a class="ghost-button" href="{{ url_for('admin_products') }}">Товары</a>
+    </div>
+    <div class="brand-name">ViolentDeck</div>
+    <a class="ghost-button" href="{{ url_for('logout') }}">Выход</a>
+  </header>
+  <main class="admin-page">
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash-box">
+        {% for message in messages %}
+          <p>{{ message }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% endwith %}
+    <section class="admin-card">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Заказы</p>
+          <h1>Все заказы пользователей</h1>
+        </div>
+        <span class="pagination-label">Всего: {{ total }}</span>
+      </div>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Пользователь</th>
+              <th>Почта</th>
+              <th>Товар</th>
+              <th>Категория</th>
+              <th>Количество</th>
+              <th>Сумма</th>
+              <th>Адрес</th>
+              <th>Оплата</th>
+              <th>Статус</th>
+              <th>Дата</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for order in orders %}
+            <tr>
+              <form action="{{ url_for('admin_update_order', order_id=order.id) }}" method="post">
+                <td>
+                  {{ order.id }}
+                  <input type="hidden" name="page" value="{{ page }}">
+                </td>
+                <td>{{ order.username }}</td>
+                <td>{{ order.email or '—' }}</td>
+                <td>{{ order.product_name }}</td>
+                <td>{{ order.category_slug or '—' }}</td>
+                <td><input name="quantity" type="number" min="1" value="{{ order.quantity }}" required></td>
+                <td>{{ '%.2f'|format(order.total_price) }} ₽</td>
+                <td><textarea name="shipping_address" rows="2" required>{{ order.shipping_address }}</textarea></td>
+                <td>
+                  <select name="payment_method">
+                    {% for method_value, method_label in payment_methods %}
+                    <option value="{{ method_value }}" {% if order.payment_method == method_value %}selected{% endif %}>{{ method_label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td>
+                  <select name="status">
+                    {% for status_value, status_label in order_statuses %}
+                    <option value="{{ status_value }}" {% if order.status == status_value %}selected{% endif %}>{{ status_label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td>{{ order.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                <td class="order-actions-cell">
+                  <button type="submit" class="primary compact-button">Сохранить</button>
+                  <button type="submit" class="ghost-button compact-button" formaction="{{ url_for('admin_delete_order', order_id=order.id) }}" formnovalidate onclick="return confirm('Удалить заказ?')">Удалить</button>
+                </td>
+              </form>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% if total_pages > 1 %}
+    <nav class="pagination-bar">
+      <a class="ghost-button{% if page == 1 %} disabled-link{% endif %}" href="{{ url_for('admin_orders', page=page-1) if page > 1 else '#' }}">Назад</a>
+      <span class="pagination-label">Страница {{ page }} из {{ total_pages }}</span>
+      <a class="ghost-button{% if page == total_pages %} disabled-link{% endif %}" href="{{ url_for('admin_orders', page=page+1) if page < total_pages else '#' }}">Далее</a>
+    </nav>
+    {% endif %}
+  </main>
+</body>
+</html>

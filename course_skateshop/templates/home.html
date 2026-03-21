@@ -9,7 +9,9 @@
 <body>
   <header class="app-header">
     <div class="header-actions">
-      <button class="ghost-button" type="button">Корзина</button>
+      {% if user.role != 'admin' %}
+      <a class="ghost-button" href="{{ url_for('cart_page') }}">Корзина{% if cart_count %} ({{ cart_count }}){% endif %}</a>
+      {% endif %}
       <a class="ghost-button" href="{{ url_for('profile') }}">Профиль</a>
       {% if user.role == 'admin' %}
       <a class="ghost-button" href="{{ url_for('admin_dashboard') }}">Админ-панель</a>

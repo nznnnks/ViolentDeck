@@ -29,6 +29,18 @@ app.secret_key = settings.SECRET_KEY
 engine = create_engine(settings.DATABASE_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 PAGE_SIZE = 10
+ORDER_STATUSES = [
+    ("new", "Новый"),
+    ("processing", "В обработке"),
+    ("shipped", "Отправлен"),
+    ("done", "Завершён"),
+    ("cancelled", "Отменён"),
+]
+PAYMENT_METHODS = [
+    ("cash", "Наличными при получении"),
+    ("card", "Картой при получении"),
+    ("online", "Онлайн-оплата"),
+]
 
 
 class Base(DeclarativeBase):
@@ -59,6 +71,20 @@ class Product(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     image_url: Mapped[str] = mapped_column(String(500), nullable=False)
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    product_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    quantity: Mapped[int] = mapped_column(nullable=False, default=1)
+    total_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    shipping_address: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    payment_method: Mapped[str] = mapped_column(String(30), nullable=False, default="cash")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="new")
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -137,6 +163,20 @@ def normalize_role(role: str | None) -> str:
     return "admin" if role == "admin" else "customer"
 
 
+def normalize_order_status(status: str | None) -> str:
+    allowed_statuses = {value for value, _ in ORDER_STATUSES}
+    return status if status in allowed_statuses else "new"
+
+
+def normalize_payment_method(payment_method: str | None) -> str:
+    allowed_methods = {value for value, _ in PAYMENT_METHODS}
+    return payment_method if payment_method in allowed_methods else "cash"
+
+
+def get_payment_method_label(payment_method: str) -> str:
+    return next((label for value, label in PAYMENT_METHODS if value == payment_method), "Наличными при получении")
+
+
 def build_redirect_after_login(user: User):
     return redirect(url_for("admin_dashboard" if user.role == "admin" else "shop"))
 
@@ -149,6 +189,67 @@ def get_image_source(image_value: str) -> str:
     if image_value.startswith(("http://", "https://", "/")):
         return image_value
     return url_for("static", filename=image_value)
+
+
+def get_cart() -> dict[str, int]:
+    raw_cart = session.get("cart", {})
+    normalized_cart: dict[str, int] = {}
+    if not isinstance(raw_cart, dict):
+        return normalized_cart
+
+    for product_id, quantity in raw_cart.items():
+        try:
+            normalized_quantity = max(1, int(quantity))
+        except (TypeError, ValueError):
+            continue
+        normalized_cart[str(product_id)] = normalized_quantity
+    return normalized_cart
+
+
+def save_cart(cart: dict[str, int]) -> None:
+    session["cart"] = cart
+    session.modified = True
+
+
+def clear_cart() -> None:
+    session.pop("cart", None)
+
+
+def get_cart_count() -> int:
+    return sum(get_cart().values())
+
+
+def serialize_order(order: Order, product: Product | None) -> dict:
+    return {
+        "id": order.id,
+        "quantity": order.quantity,
+        "status": order.status,
+        "total_price": order.total_price,
+        "shipping_address": order.shipping_address,
+        "payment_method": order.payment_method,
+        "payment_method_label": get_payment_method_label(order.payment_method),
+        "created_at": order.created_at,
+        "product_name": product.name if product is not None else "Товар удалён",
+        "product_image_url": product.image_url if product is not None else "",
+        "product_category_slug": product.category_slug if product is not None else "",
+    }
+
+
+def serialize_admin_order(order: Order, user: User | None, product: Product | None) -> dict:
+    return {
+        "id": order.id,
+        "quantity": order.quantity,
+        "status": order.status,
+        "total_price": order.total_price,
+        "shipping_address": order.shipping_address,
+        "payment_method": order.payment_method,
+        "payment_method_label": get_payment_method_label(order.payment_method),
+        "created_at": order.created_at,
+        "username": user.username if user is not None else "Пользователь удалён",
+        "email": user.email if user is not None else "",
+        "product_name": product.name if product is not None else "Товар удалён",
+        "category_slug": product.category_slug if product is not None else "",
+    }
 
 
 def generate_code() -> str:
@@ -208,6 +309,31 @@ def ensure_user_table_columns() -> None:
             connection.execute(text(statement))
 
 
+def ensure_order_table_columns() -> None:
+    inspector = inspect(engine)
+    if not inspector.has_table("orders"):
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("orders")}
+    alter_statements = []
+
+    if "shipping_address" not in existing_columns:
+        alter_statements.append(
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_address TEXT NOT NULL DEFAULT ''"
+        )
+    if "payment_method" not in existing_columns:
+        alter_statements.append(
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method VARCHAR(30) NOT NULL DEFAULT 'cash'"
+        )
+
+    if not alter_statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in alter_statements:
+            connection.execute(text(statement))
+
+
 def ensure_seed_user(seed_user: dict) -> None:
     with SessionLocal() as db_session:
         user = db_session.scalar(select(User).where(User.username == seed_user["username"]))
@@ -229,6 +355,7 @@ def ensure_seed_user(seed_user: dict) -> None:
 def init_db() -> None:
     Base.metadata.create_all(engine)
     ensure_user_table_columns()
+    ensure_order_table_columns()
     ensure_seed_user(DEFAULT_USER)
     ensure_seed_user(ADMIN_USER)
 
@@ -321,6 +448,11 @@ def issue_password_reset_code(user: User) -> None:
         db_user.password_reset_expires_at = expires_at
         db_session.commit()
     send_password_reset_email(user.email, code)
+
+
+@app.context_processor
+def inject_cart_state():
+    return {"cart_count": get_cart_count()}
 
 
 @app.route("/", methods=["GET"])
@@ -553,12 +685,231 @@ def category_page(slug: str):
     return render_template("category.html", user=user_to_dict(user), category=category, products=products, page=page, total_pages=total_pages, total=total, get_image_source=get_image_source)
 
 
+@app.post("/cart/add")
+def add_to_cart():
+    user = get_authenticated_user()
+    if user is None:
+        return redirect(url_for("auth_page"))
+    if user.role == "admin":
+        flash("Корзина доступна только пользователям.")
+        return redirect(url_for("shop"))
+
+    product_id_raw = request.form.get("product_id", "").strip()
+    category_slug = request.form.get("category_slug", "").strip()
+    page_raw = request.form.get("page", "1").strip()
+    quantity_raw = request.form.get("quantity", "1").strip()
+
+    try:
+        product_id = int(product_id_raw)
+    except ValueError:
+        flash("Не удалось добавить товар: товар не найден.")
+        return redirect(url_for("shop"))
+
+    try:
+        page = max(1, int(page_raw))
+    except ValueError:
+        page = 1
+
+    try:
+        quantity = max(1, int(quantity_raw))
+    except ValueError:
+        quantity = 1
+
+    with SessionLocal() as db_session:
+        product = db_session.scalar(select(Product).where(Product.id == product_id))
+        if product is None:
+            flash("Не удалось добавить товар: товар не найден.")
+            return redirect(url_for("shop"))
+
+    cart = get_cart()
+    cart_key = str(product_id)
+    cart[cart_key] = cart.get(cart_key, 0) + quantity
+    save_cart(cart)
+
+    flash("Товар добавлен в корзину.")
+    if category_slug:
+        return redirect(url_for("category_page", slug=category_slug, page=page))
+    return redirect(url_for("cart_page"))
+
+
+@app.route("/cart")
+def cart_page():
+    user = get_authenticated_user()
+    if user is None:
+        return redirect(url_for("auth_page"))
+    if user.role == "admin":
+        return redirect(url_for("shop"))
+
+    cart = get_cart()
+    product_ids = []
+    for product_id in cart.keys():
+        try:
+            product_ids.append(int(product_id))
+        except ValueError:
+            continue
+
+    with SessionLocal() as db_session:
+        products = list(db_session.scalars(select(Product).where(Product.id.in_(product_ids)))) if product_ids else []
+
+    products_by_id = {product.id: product for product in products}
+    cart_items = []
+    cart_total = Decimal("0.00")
+    for product_id, quantity in cart.items():
+        try:
+            product = products_by_id.get(int(product_id))
+        except ValueError:
+            product = None
+        if product is None:
+            continue
+        item_total = product.price * quantity
+        cart_total += item_total
+        cart_items.append(
+            {
+                "product_id": product.id,
+                "name": product.name,
+                "price": product.price,
+                "quantity": quantity,
+                "item_total": item_total,
+                "image_url": product.image_url,
+                "category_slug": product.category_slug,
+            }
+        )
+
+    return render_template(
+        "cart.html",
+        user=user_to_dict(user),
+        cart_items=cart_items,
+        cart_total=cart_total,
+        get_image_source=get_image_source,
+    )
+
+
+@app.post("/cart/update")
+def update_cart_item():
+    user = get_authenticated_user()
+    if user is None:
+        return redirect(url_for("auth_page"))
+
+    product_id = request.form.get("product_id", "").strip()
+    quantity_raw = request.form.get("quantity", "1").strip()
+    cart = get_cart()
+
+    if product_id not in cart:
+        return redirect(url_for("cart_page"))
+
+    try:
+        quantity = int(quantity_raw)
+    except ValueError:
+        quantity = cart[product_id]
+
+    if quantity <= 0:
+        cart.pop(product_id, None)
+    else:
+        cart[product_id] = quantity
+
+    save_cart(cart)
+    return redirect(url_for("cart_page"))
+
+
+@app.post("/cart/remove")
+def remove_from_cart():
+    user = get_authenticated_user()
+    if user is None:
+        return redirect(url_for("auth_page"))
+
+    product_id = request.form.get("product_id", "").strip()
+    cart = get_cart()
+    cart.pop(product_id, None)
+    save_cart(cart)
+    flash("Товар удалён из корзины.")
+    return redirect(url_for("cart_page"))
+
+
+@app.post("/orders/create")
+def create_order():
+    user = get_authenticated_user()
+    if user is None:
+        return redirect(url_for("auth_page"))
+    if user.role == "admin":
+        flash("Оформление заказов доступно только пользователям.")
+        return redirect(url_for("shop"))
+
+    shipping_address = request.form.get("shipping_address", "").strip()
+    payment_method = normalize_payment_method(request.form.get("payment_method"))
+    if not shipping_address:
+        flash("Укажите адрес доставки.")
+        return redirect(url_for("cart_page"))
+
+    cart = get_cart()
+    if not cart:
+        flash("Корзина пуста.")
+        return redirect(url_for("cart_page"))
+
+    product_ids = []
+    for product_id in cart.keys():
+        try:
+            product_ids.append(int(product_id))
+        except ValueError:
+            continue
+
+    with SessionLocal() as db_session:
+        products = list(db_session.scalars(select(Product).where(Product.id.in_(product_ids)))) if product_ids else []
+        products_by_id = {product.id: product for product in products}
+        created_orders = 0
+
+        for product_id, quantity in cart.items():
+            try:
+                product = products_by_id.get(int(product_id))
+            except ValueError:
+                product = None
+            if product is None:
+                continue
+
+            db_session.add(
+                Order(
+                    user_id=user.id,
+                    product_id=product.id,
+                    quantity=quantity,
+                    total_price=product.price * quantity,
+                    shipping_address=shipping_address,
+                    payment_method=payment_method,
+                    status="new",
+                )
+            )
+            created_orders += 1
+
+        db_session.commit()
+
+    if created_orders == 0:
+        flash("Не удалось оформить заказ: корзина пуста или товары недоступны.")
+        return redirect(url_for("cart_page"))
+
+    clear_cart()
+    flash("Заказ успешно оформлен.")
+    return redirect(url_for("profile"))
+
+
 @app.route("/profile")
 def profile():
     user = get_authenticated_user()
     if user is None:
         return redirect(url_for("auth_page"))
-    return render_template("profile.html", user=user_to_dict(user))
+
+    with SessionLocal() as db_session:
+        orders = list(
+            db_session.scalars(
+                select(Order)
+                .where(Order.user_id == user.id)
+                .order_by(Order.created_at.desc(), Order.id.desc())
+                .limit(10)
+            )
+        )
+        product_ids = [order.product_id for order in orders]
+        products = list(db_session.scalars(select(Product).where(Product.id.in_(product_ids)))) if product_ids else []
+
+    products_by_id = {product.id: product for product in products}
+    orders_data = [serialize_order(order, products_by_id.get(order.product_id)) for order in orders]
+    return render_template("profile.html", user=user_to_dict(user), orders=orders_data, get_image_source=get_image_source)
 
 
 @app.post("/profile/password/send-code")
@@ -744,6 +1095,110 @@ def admin_products():
     return render_template("admin_products.html", user=user_to_dict(admin_user), categories=PRODUCT_CARDS, products=products, page=page, total_pages=total_pages, total=total, selected_category=category_filter, get_image_source=get_image_source)
 
 
+@app.route("/admin/orders")
+def admin_orders():
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    page = parse_page_arg()
+    with SessionLocal() as db_session:
+        statement = select(Order).order_by(Order.created_at.desc(), Order.id.desc())
+        orders, page, total_pages, total = paginate_statement(db_session, statement, page)
+
+        user_ids = [order.user_id for order in orders]
+        product_ids = [order.product_id for order in orders]
+        users = list(db_session.scalars(select(User).where(User.id.in_(user_ids)))) if user_ids else []
+        products = list(db_session.scalars(select(Product).where(Product.id.in_(product_ids)))) if product_ids else []
+
+    users_by_id = {user.id: user for user in users}
+    products_by_id = {product.id: product for product in products}
+    orders_data = [
+        serialize_admin_order(order, users_by_id.get(order.user_id), products_by_id.get(order.product_id))
+        for order in orders
+    ]
+
+    return render_template(
+        "admin_orders.html",
+        user=user_to_dict(admin_user),
+        orders=orders_data,
+        order_statuses=ORDER_STATUSES,
+        payment_methods=PAYMENT_METHODS,
+        page=page,
+        total_pages=total_pages,
+        total=total,
+    )
+
+
+@app.post("/admin/orders/<int:order_id>/update")
+def admin_update_order(order_id: int):
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    page = request.form.get("page", "1")
+    quantity_raw = request.form.get("quantity", "1").strip()
+    shipping_address = request.form.get("shipping_address", "").strip()
+    status = normalize_order_status(request.form.get("status"))
+    payment_method = normalize_payment_method(request.form.get("payment_method"))
+
+    try:
+        quantity = int(quantity_raw)
+    except ValueError:
+        flash("Количество должно быть целым числом.")
+        return redirect(url_for("admin_orders", page=page))
+
+    if quantity <= 0:
+        flash("Количество должно быть больше нуля.")
+        return redirect(url_for("admin_orders", page=page))
+    if not shipping_address:
+        flash("Укажите адрес доставки.")
+        return redirect(url_for("admin_orders", page=page))
+
+    with SessionLocal() as db_session:
+        order = db_session.scalar(select(Order).where(Order.id == order_id))
+        if order is None:
+            flash("Заказ не найден.")
+            return redirect(url_for("admin_orders", page=page))
+
+        product = db_session.scalar(select(Product).where(Product.id == order.product_id))
+        if product is not None:
+            unit_price = product.price
+        elif order.quantity > 0:
+            unit_price = (Decimal(order.total_price) / Decimal(order.quantity)).quantize(Decimal("0.01"))
+        else:
+            unit_price = Decimal(order.total_price)
+
+        order.quantity = quantity
+        order.shipping_address = shipping_address
+        order.payment_method = payment_method
+        order.status = status
+        order.total_price = (unit_price * quantity).quantize(Decimal("0.01"))
+        db_session.commit()
+
+    flash("Заказ обновлён.")
+    return redirect(url_for("admin_orders", page=page))
+
+
+@app.post("/admin/orders/<int:order_id>/delete")
+def admin_delete_order(order_id: int):
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    page = request.form.get("page", "1")
+    with SessionLocal() as db_session:
+        order = db_session.scalar(select(Order).where(Order.id == order_id))
+        if order is None:
+            flash("Заказ не найден.")
+            return redirect(url_for("admin_orders", page=page))
+        db_session.delete(order)
+        db_session.commit()
+
+    flash("Заказ удалён.")
+    return redirect(url_for("admin_orders", page=page))
+
+
 @app.post("/admin/products/create")
 def admin_create_product():
     admin_user = get_admin_user()
@@ -788,6 +1243,7 @@ def logout():
     clear_pending_verification()
     clear_pending_password_reset()
     clear_pending_forgot_password()
+    clear_cart()
     return redirect(url_for("auth_page"))
 
 

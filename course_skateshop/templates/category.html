@@ -10,6 +10,9 @@
   <header class="app-header">
     <div class="header-actions">
       <a class="ghost-button" href="{{ url_for('shop') }}">Назад в магазин</a>
+      {% if user.role != 'admin' %}
+      <a class="ghost-button" href="{{ url_for('cart_page') }}">Корзина{% if cart_count %} ({{ cart_count }}){% endif %}</a>
+      {% endif %}
       <a class="ghost-button" href="{{ url_for('profile') }}">Профиль</a>
       {% if user.role == 'admin' %}
       <a class="ghost-button" href="{{ url_for('admin_dashboard') }}">Админ-панель</a>
@@ -45,6 +48,18 @@
           <h2>{{ product.name }}</h2>
           <p>{{ product.description }}</p>
           <strong class="price-label">{{ '%.2f'|format(product.price) }} ₽</strong>
+          {% if user.role != 'admin' %}
+          <form action="{{ url_for('add_to_cart') }}" method="post" class="order-form">
+            <input type="hidden" name="product_id" value="{{ product.id }}">
+            <input type="hidden" name="category_slug" value="{{ category.slug }}">
+            <input type="hidden" name="page" value="{{ page }}">
+            <label class="quantity-field">
+              <span>Количество</span>
+              <input name="quantity" type="number" min="1" value="1" required>
+            </label>
+            <button type="submit" class="primary">В корзину</button>
+          </form>
+          {% endif %}
         </div>
       </article>
       {% endfor %}

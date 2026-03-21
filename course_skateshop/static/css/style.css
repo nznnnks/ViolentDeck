@@ -191,7 +191,7 @@ textarea {
 }
 
 .catalog-grid {
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-bottom: 1.5rem;
 }
 
@@ -222,6 +222,17 @@ textarea {
   padding: 1.5rem;
 }
 
+.order-form {
+  margin-top: 1rem;
+}
+
+.quantity-field {
+  display: grid;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+  text-align: left;
+}
+
 .price-label {
   display: inline-block;
   margin-top: 0.5rem;
@@ -248,6 +259,93 @@ textarea {
   max-width: 1100px;
   margin: 0 auto;
   padding: 2rem 1.5rem 3rem;
+}
+
+.cart-page {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+}
+
+.cart-layout {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+}
+
+.cart-items {
+  display: grid;
+  gap: 1rem;
+}
+
+.cart-item-card,
+.cart-summary {
+  background: #111;
+  border: 1px solid #1f1f1f;
+  border-radius: 1rem;
+}
+
+.cart-item-card {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  overflow: hidden;
+}
+
+.cart-item-image {
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+  object-fit: cover;
+}
+
+.cart-item-body,
+.cart-summary {
+  padding: 1.5rem;
+}
+
+.cart-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.cart-qty-form {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.cart-qty-form input {
+  max-width: 100px;
+}
+
+.orders-section {
+  margin-top: 1.5rem;
+}
+
+.orders-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.order-card {
+  background: #111;
+  border: 1px solid #1f1f1f;
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+.order-card-image {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  display: block;
+}
+
+.order-card-body {
+  padding: 1.25rem 1.5rem 1.5rem;
 }
 
 .profile-grid {
@@ -370,6 +468,13 @@ textarea {
   min-width: 120px;
 }
 
+.order-actions-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 150px;
+}
+
 .checkbox-field {
   display: inline-flex;
   align-items: center;
@@ -408,7 +513,22 @@ textarea {
     gap: 1rem;
   }
 
+  .catalog-grid {
+    grid-template-columns: 1fr;
+  }
+
   .admin-product-card {
     grid-template-columns: 1fr;
+  }
+
+  .cart-layout,
+  .cart-item-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 721px) and (max-width: 1024px) {
+  .catalog-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

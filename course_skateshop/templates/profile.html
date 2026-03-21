@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
@@ -10,6 +10,9 @@
   <header class="app-header">
     <div class="header-actions">
       <a class="ghost-button" href="{{ url_for('shop') }}">Магазин</a>
+      {% if user.role != 'admin' %}
+      <a class="ghost-button" href="{{ url_for('cart_page') }}">Корзина{% if cart_count %} ({{ cart_count }}){% endif %}</a>
+      {% endif %}
       {% if user.role == 'admin' %}
       <a class="ghost-button" href="{{ url_for('admin_dashboard') }}">Админ-панель</a>
       {% endif %}
@@ -52,6 +55,40 @@
           <button type="submit" class="primary">Отправить код на почту</button>
         </form>
       </article>
+    </section>
+    <section class="orders-section">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Заказы</p>
+          <h2>История покупок</h2>
+        </div>
+      </div>
+      {% if orders %}
+      <div class="orders-grid">
+        {% for order in orders %}
+        <article class="order-card">
+          {% if order.product_image_url %}
+          <img class="order-card-image" src="{{ get_image_source(order.product_image_url) }}" alt="{{ order.product_name }}">
+          {% endif %}
+          <div class="order-card-body">
+            <h3>{{ order.product_name }}</h3>
+            <p>Заказ №{{ order.id }}</p>
+            <p>Статус: {{ order.status }}</p>
+            <p>Количество: {{ order.quantity }}</p>
+            <p>Оплата: {{ order.payment_method_label }}</p>
+            <p>Адрес: {{ order.shipping_address }}</p>
+            <p>Дата: {{ order.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+            <strong class="price-label">{{ '%.2f'|format(order.total_price) }} ₽</strong>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <section class="empty-state-card">
+        <h2>У вас пока нет заказов</h2>
+        <p>Оформите заказ в любой категории, и он появится здесь.</p>
+      </section>
+      {% endif %}
     </section>
   </main>
 </body>
