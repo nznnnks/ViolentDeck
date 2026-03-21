@@ -50,6 +50,7 @@
           <label>Цена
             <input name="price" type="text" placeholder="7990.00" required>
           </label>
+          <input type="hidden" name="q" value="{{ search_query }}">
           <button type="submit" class="primary">Добавить товар</button>
         </form>
       </article>
@@ -82,11 +83,17 @@
           {% for product in products %}
           <article class="admin-product-card">
             <img class="admin-product-image" src="{{ get_image_source(product.image_url) }}" alt="{{ product.name }}">
-            <div>
+            <div class="admin-product-body">
               <p class="card-tag">{{ product.category_slug.upper() }}</p>
               <h3>{{ product.name }}</h3>
               <p>{{ product.description }}</p>
               <strong class="price-label">{{ '%.2f'|format(product.price) }} ₽</strong>
+              <form action="{{ url_for('admin_delete_product', product_id=product.id) }}" method="post" class="admin-product-actions">
+                <input type="hidden" name="page" value="{{ page }}">
+                <input type="hidden" name="category_filter" value="{{ selected_category }}">
+                <input type="hidden" name="q" value="{{ search_query }}">
+                <button type="submit" class="ghost-button compact-button" onclick="return confirm('Удалить товар?')">Удалить</button>
+              </form>
             </div>
           </article>
           {% endfor %}

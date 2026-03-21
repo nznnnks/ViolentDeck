@@ -26,73 +26,104 @@
       </div>
     {% endif %}
     {% endwith %}
-    <section class="admin-card">
-      <div class="section-head">
-        <div>
-          <p class="eyebrow">Пользователи</p>
-          <h1>Управление аккаунтами</h1>
+    <section class="admin-grid">
+      <article class="admin-card">
+        <p class="eyebrow">Добавление</p>
+        <h1>Новый пользователь</h1>
+        <form class="admin-form" action="{{ url_for('admin_create_user') }}" method="post">
+          <label>Логин
+            <input name="username" type="text" placeholder="Например, rider01" required>
+          </label>
+          <label>Почта
+            <input name="email" type="email" placeholder="user@example.com" required>
+          </label>
+          <label>Пароль
+            <input name="password" type="password" placeholder="Минимум 6 символов" required>
+          </label>
+          <label>Роль
+            <select name="role">
+              <option value="customer">Пользователь</option>
+              <option value="admin">Администратор</option>
+            </select>
+          </label>
+          <label class="checkbox-field">
+            <input name="is_verified" type="checkbox" checked>
+            <span>Сразу подтвердить аккаунт</span>
+          </label>
+          <button type="submit" class="primary">Добавить пользователя</button>
+        </form>
+      </article>
+      <article class="admin-card">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Пользователи</p>
+            <h2>Управление аккаунтами</h2>
+          </div>
+          <span class="pagination-label">Всего: {{ total }}</span>
         </div>
-        <span class="pagination-label">Всего: {{ total }}</span>
-      </div>
-      <form class="filter-row filter-form" method="get" action="{{ url_for('admin_users') }}">
-        <input name="q" type="search" value="{{ search_query }}" placeholder="Поиск по логину или почте">
-        <select name="role">
-          <option value="all" {% if selected_role == 'all' %}selected{% endif %}>Все роли</option>
-          <option value="customer" {% if selected_role == 'customer' %}selected{% endif %}>Пользователи</option>
-          <option value="admin" {% if selected_role == 'admin' %}selected{% endif %}>Администраторы</option>
-        </select>
-        <select name="verified">
-          <option value="all" {% if selected_verified == 'all' %}selected{% endif %}>Любой статус</option>
-          <option value="verified" {% if selected_verified == 'verified' %}selected{% endif %}>Подтверждённые</option>
-          <option value="unverified" {% if selected_verified == 'unverified' %}selected{% endif %}>Неподтверждённые</option>
-        </select>
-        <button type="submit" class="ghost-button">Фильтровать</button>
-        <a class="ghost-button" href="{{ url_for('admin_users') }}">Сбросить</a>
-      </form>
-      <div class="admin-table-wrap">
-        <table class="admin-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Логин</th>
-              <th>Почта</th>
-              <th>Роль</th>
-              <th>Подтверждён</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for item in users %}
-            <tr>
-              <form action="{{ url_for('admin_update_user', user_id=item.id) }}" method="post">
-                <td>
-                  {{ item.id }}
-                  <input type="hidden" name="page" value="{{ page }}">
-                  <input type="hidden" name="q" value="{{ search_query }}">
-                  <input type="hidden" name="role_filter" value="{{ selected_role }}">
-                  <input type="hidden" name="verified_filter" value="{{ selected_verified }}">
-                </td>
-                <td><input name="username" type="text" value="{{ item.username }}" required></td>
-                <td><input name="email" type="email" value="{{ item.email }}" required></td>
-                <td>
-                  <select name="role">
-                    <option value="customer" {% if item.role != 'admin' %}selected{% endif %}>Пользователь</option>
-                    <option value="admin" {% if item.role == 'admin' %}selected{% endif %}>Администратор</option>
-                  </select>
-                </td>
-                <td>
-                  <label class="checkbox-field">
-                    <input name="is_verified" type="checkbox" {% if item.is_verified %}checked{% endif %}>
-                    <span>Да</span>
-                  </label>
-                </td>
-                <td><button type="submit" class="primary compact-button">Сохранить</button></td>
-              </form>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+        <form class="filter-row filter-form" method="get" action="{{ url_for('admin_users') }}">
+          <input name="q" type="search" value="{{ search_query }}" placeholder="Поиск по логину или почте">
+          <select name="role">
+            <option value="all" {% if selected_role == 'all' %}selected{% endif %}>Все роли</option>
+            <option value="customer" {% if selected_role == 'customer' %}selected{% endif %}>Пользователи</option>
+            <option value="admin" {% if selected_role == 'admin' %}selected{% endif %}>Администраторы</option>
+          </select>
+          <select name="verified">
+            <option value="all" {% if selected_verified == 'all' %}selected{% endif %}>Любой статус</option>
+            <option value="verified" {% if selected_verified == 'verified' %}selected{% endif %}>Подтверждённые</option>
+            <option value="unverified" {% if selected_verified == 'unverified' %}selected{% endif %}>Неподтверждённые</option>
+          </select>
+          <button type="submit" class="ghost-button">Фильтровать</button>
+          <a class="ghost-button" href="{{ url_for('admin_users') }}">Сбросить</a>
+        </form>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Логин</th>
+                <th>Почта</th>
+                <th>Роль</th>
+                <th>Подтверждён</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in users %}
+              <tr>
+                <form action="{{ url_for('admin_update_user', user_id=item.id) }}" method="post">
+                  <td>
+                    {{ item.id }}
+                    <input type="hidden" name="page" value="{{ page }}">
+                    <input type="hidden" name="q" value="{{ search_query }}">
+                    <input type="hidden" name="role_filter" value="{{ selected_role }}">
+                    <input type="hidden" name="verified_filter" value="{{ selected_verified }}">
+                  </td>
+                  <td><input name="username" type="text" value="{{ item.username }}" required></td>
+                  <td><input name="email" type="email" value="{{ item.email }}" required></td>
+                  <td>
+                    <select name="role">
+                      <option value="customer" {% if item.role != 'admin' %}selected{% endif %}>Пользователь</option>
+                      <option value="admin" {% if item.role == 'admin' %}selected{% endif %}>Администратор</option>
+                    </select>
+                  </td>
+                  <td>
+                    <label class="checkbox-field">
+                      <input name="is_verified" type="checkbox" {% if item.is_verified %}checked{% endif %}>
+                      <span>Да</span>
+                    </label>
+                  </td>
+                  <td class="order-actions-cell">
+                    <button type="submit" class="primary compact-button">Сохранить</button>
+                    <button type="submit" class="ghost-button compact-button" formaction="{{ url_for('admin_delete_user', user_id=item.id) }}" formnovalidate onclick="return confirm('Удалить пользователя?')">Удалить</button>
+                  </td>
+                </form>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </article>
     </section>
     {% if total_pages > 1 %}
     <nav class="pagination-bar">

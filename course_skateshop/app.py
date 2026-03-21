@@ -1051,6 +1051,54 @@ def admin_users():
     )
 
 
+@app.post("/admin/users/create")
+def admin_create_user():
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    username = request.form.get("username", "").strip().lower()
+    email = request.form.get("email", "").strip().lower()
+    password = request.form.get("password", "")
+    role = normalize_role(request.form.get("role"))
+    is_verified = request.form.get("is_verified") == "on"
+
+    if not username or not email or not password:
+        flash("Логин, почта и пароль обязательны.")
+        return redirect(url_for("admin_users"))
+    if len(password) < 6:
+        flash("Пароль должен быть не короче 6 символов.")
+        return redirect(url_for("admin_users"))
+
+    with SessionLocal() as db_session:
+        username_owner = db_session.scalar(select(User.id).where(User.username == username))
+        if username_owner is not None:
+            flash("Логин уже занят другим пользователем.")
+            return redirect(url_for("admin_users"))
+        email_owner = db_session.scalar(select(User.id).where(User.email == email))
+        if email_owner is not None:
+            flash("Почта уже занята другим пользователем.")
+            return redirect(url_for("admin_users"))
+
+        db_session.add(
+            User(
+                username=username,
+                email=email,
+                password_hash=generate_password_hash(password),
+                role=role,
+                is_verified=is_verified,
+                verification_code=None,
+                verification_expires_at=None,
+                password_reset_code=None,
+                password_reset_expires_at=None,
+            )
+        )
+        db_session.commit()
+
+    flash("Пользователь добавлен.")
+    return redirect(url_for("admin_users"))
+
+
 @app.post("/admin/users/<int:user_id>/update")
 def admin_update_user(user_id: int):
     admin_user = get_admin_user()
@@ -1102,6 +1150,41 @@ def admin_update_user(user_id: int):
     if admin_user.id == user_id and updated_role != "admin":
         return redirect(url_for("shop"))
     return redirect(url_for("admin_users", page=page, q=search_query, role=role_filter, verified=verified_filter))
+
+
+@app.post("/admin/users/<int:user_id>/delete")
+def admin_delete_user(user_id: int):
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    page = request.form.get("page", "1")
+    search_query = request.form.get("q", "").strip().lower()
+    role_filter = request.form.get("role_filter", "all").strip().lower()
+    verified_filter = request.form.get("verified_filter", "all").strip().lower()
+
+    if admin_user.id == user_id:
+        flash("Нельзя удалить текущего администратора.")
+        return redirect(url_for("admin_users", page=page, q=search_query, role=role_filter, verified=verified_filter))
+
+    with SessionLocal() as db_session:
+        target_user = db_session.scalar(select(User).where(User.id == user_id))
+        if target_user is None:
+            flash("Пользователь не найден.")
+            return redirect(url_for("admin_users", page=page, q=search_query, role=role_filter, verified=verified_filter))
+
+        if target_user.role == "admin":
+            admins_count = db_session.scalar(select(func.count(User.id)).where(User.role == "admin")) or 0
+            if admins_count <= 1:
+                flash("Нельзя удалить последнего администратора.")
+                return redirect(url_for("admin_users", page=page, q=search_query, role=role_filter, verified=verified_filter))
+
+        db_session.delete(target_user)
+        db_session.commit()
+
+    flash("Пользователь удалён.")
+    return redirect(url_for("admin_users", page=page, q=search_query, role=role_filter, verified=verified_filter))
+
 
 @app.route("/admin/products")
 def admin_products():
@@ -1287,6 +1370,7 @@ def admin_create_product():
         return redirect(url_for("auth_page"))
 
     category_slug = request.form.get("category_slug", "")
+    search_query = request.form.get("q", "").strip()
     name = request.form.get("name", "").strip()
     description = request.form.get("description", "").strip()
     image_url = request.form.get("image_url", "").strip()
@@ -1295,27 +1379,50 @@ def admin_create_product():
     category = get_category_by_slug(category_slug)
     if category is None:
         flash("Выберите корректную категорию.")
-        return redirect(url_for("admin_products"))
+        return redirect(url_for("admin_products", q=search_query))
     if not name or not description or not price_raw:
         flash("Заполните название, описание и цену товара.")
-        return redirect(url_for("admin_products", category=category_slug))
+        return redirect(url_for("admin_products", category=category_slug, q=search_query))
 
     try:
         price = Decimal(price_raw)
     except InvalidOperation:
         flash("Цена должна быть числом.")
-        return redirect(url_for("admin_products", category=category_slug))
+        return redirect(url_for("admin_products", category=category_slug, q=search_query))
 
     if price <= 0:
         flash("Цена должна быть больше нуля.")
-        return redirect(url_for("admin_products", category=category_slug))
+        return redirect(url_for("admin_products", category=category_slug, q=search_query))
 
     with SessionLocal() as db_session:
         db_session.add(Product(category_slug=category_slug, name=name, description=description, image_url=image_url or category["image"], price=price.quantize(Decimal("0.01"))))
         db_session.commit()
 
     flash("Товар добавлен.")
-    return redirect(url_for("admin_products", category=category_slug))
+    return redirect(url_for("admin_products", category=category_slug, q=search_query))
+
+
+@app.post("/admin/products/<int:product_id>/delete")
+def admin_delete_product(product_id: int):
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    page = request.form.get("page", "1")
+    category_filter = request.form.get("category_filter", "all").strip().lower()
+    search_query = request.form.get("q", "").strip()
+
+    with SessionLocal() as db_session:
+        product = db_session.scalar(select(Product).where(Product.id == product_id))
+        if product is None:
+            flash("Товар не найден.")
+            return redirect(url_for("admin_products", page=page, category=category_filter, q=search_query))
+
+        db_session.delete(product)
+        db_session.commit()
+
+    flash("Товар удалён.")
+    return redirect(url_for("admin_products", page=page, category=category_filter, q=search_query))
 
 
 @app.route("/logout")

@@ -514,6 +514,17 @@ textarea {
   overflow: hidden;
 }
 
+.admin-product-body {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-product-actions {
+  margin-top: auto;
+  padding-top: 1rem;
+}
+
 @media (max-width: 720px) {
   .app-header {
     flex-direction: column;
