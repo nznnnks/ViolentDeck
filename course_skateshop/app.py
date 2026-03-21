@@ -14,6 +14,7 @@ from sqlalchemy import (
     create_engine,
     func,
     inspect,
+    or_,
     select,
     text,
 )
@@ -1015,11 +1016,39 @@ def admin_users():
         return redirect(url_for("auth_page"))
 
     page = parse_page_arg()
+    search_query = request.args.get("q", "").strip().lower()
+    role_filter = request.args.get("role", "all").strip().lower()
+    verified_filter = request.args.get("verified", "all").strip().lower()
+    if role_filter not in {"all", "customer", "admin"}:
+        role_filter = "all"
+    if verified_filter not in {"all", "verified", "unverified"}:
+        verified_filter = "all"
+
     with SessionLocal() as db_session:
-        statement = select(User).order_by(User.id.desc())
+        statement = select(User)
+        if search_query:
+            pattern = f"%{search_query}%"
+            statement = statement.where(or_(User.username.ilike(pattern), User.email.ilike(pattern)))
+        if role_filter != "all":
+            statement = statement.where(User.role == role_filter)
+        if verified_filter == "verified":
+            statement = statement.where(User.is_verified.is_(True))
+        elif verified_filter == "unverified":
+            statement = statement.where(User.is_verified.is_(False))
+        statement = statement.order_by(User.id.desc())
         users, page, total_pages, total = paginate_statement(db_session, statement, page)
 
-    return render_template("admin_users.html", user=user_to_dict(admin_user), users=users, page=page, total_pages=total_pages, total=total)
+    return render_template(
+        "admin_users.html",
+        user=user_to_dict(admin_user),
+        users=users,
+        page=page,
+        total_pages=total_pages,
+        total=total,
+        search_query=search_query,
+        selected_role=role_filter,
+        selected_verified=verified_filter,
+    )
 
 
 @app.post("/admin/users/<int:user_id>/update")
@@ -1029,32 +1058,31 @@ def admin_update_user(user_id: int):
         return redirect(url_for("auth_page"))
 
     page = request.form.get("page", "1")
+    search_query = request.form.get("q", "").strip().lower()
+    role_filter = request.form.get("role_filter", "all").strip().lower()
+    verified_filter = request.form.get("verified_filter", "all").strip().lower()
     username = request.form.get("username", "").strip().lower()
     email = request.form.get("email", "").strip().lower()
     role = normalize_role(request.form.get("role"))
     is_verified = request.form.get("is_verified") == "on"
-    new_password = request.form.get("new_password", "")
 
     if not username or not email:
         flash("Логин и почта обязательны.")
-        return redirect(url_for("admin_users", page=page))
-    if new_password and len(new_password) < 6:
-        flash("Новый пароль должен быть не короче 6 символов.")
-        return redirect(url_for("admin_users", page=page))
+        return redirect(url_for("admin_users", page=page, q=search_query, role=role_filter, verified=verified_filter))
 
     with SessionLocal() as db_session:
         target_user = db_session.scalar(select(User).where(User.id == user_id))
         if target_user is None:
             flash("Пользователь не найден.")
-            return redirect(url_for("admin_users", page=page))
+            return redirect(url_for("admin_users", page=page, q=search_query, role=role_filter, verified=verified_filter))
         username_owner = db_session.scalar(select(User.id).where(User.username == username, User.id != user_id))
         if username_owner is not None:
             flash("Логин уже занят другим пользователем.")
-            return redirect(url_for("admin_users", page=page))
+            return redirect(url_for("admin_users", page=page, q=search_query, role=role_filter, verified=verified_filter))
         email_owner = db_session.scalar(select(User.id).where(User.email == email, User.id != user_id))
         if email_owner is not None:
             flash("Почта уже занята другим пользователем.")
-            return redirect(url_for("admin_users", page=page))
+            return redirect(url_for("admin_users", page=page, q=search_query, role=role_filter, verified=verified_filter))
 
         target_user.username = username
         target_user.email = email
@@ -1063,8 +1091,6 @@ def admin_update_user(user_id: int):
         if not is_verified:
             target_user.verification_code = None
             target_user.verification_expires_at = None
-        if new_password:
-            target_user.password_hash = generate_password_hash(new_password)
         db_session.commit()
         if admin_user.id == target_user.id:
             session["user"] = target_user.username
@@ -1075,7 +1101,7 @@ def admin_update_user(user_id: int):
     flash("Данные пользователя обновлены.")
     if admin_user.id == user_id and updated_role != "admin":
         return redirect(url_for("shop"))
-    return redirect(url_for("admin_users", page=page))
+    return redirect(url_for("admin_users", page=page, q=search_query, role=role_filter, verified=verified_filter))
 
 @app.route("/admin/products")
 def admin_products():
@@ -1084,15 +1110,34 @@ def admin_products():
         return redirect(url_for("auth_page"))
 
     page = parse_page_arg()
-    category_filter = request.args.get("category", "all")
+    category_filter = request.args.get("category", "all").strip().lower()
+    search_query = request.args.get("q", "").strip()
+    category_slugs = {category["slug"] for category in PRODUCT_CARDS}
+    if category_filter != "all" and category_filter not in category_slugs:
+        category_filter = "all"
 
     with SessionLocal() as db_session:
-        statement = select(Product).order_by(Product.created_at.desc(), Product.id.desc())
+        statement = select(Product)
         if category_filter != "all":
             statement = statement.where(Product.category_slug == category_filter)
+        if search_query:
+            pattern = f"%{search_query}%"
+            statement = statement.where(or_(Product.name.ilike(pattern), Product.description.ilike(pattern)))
+        statement = statement.order_by(Product.created_at.desc(), Product.id.desc())
         products, page, total_pages, total = paginate_statement(db_session, statement, page)
 
-    return render_template("admin_products.html", user=user_to_dict(admin_user), categories=PRODUCT_CARDS, products=products, page=page, total_pages=total_pages, total=total, selected_category=category_filter, get_image_source=get_image_source)
+    return render_template(
+        "admin_products.html",
+        user=user_to_dict(admin_user),
+        categories=PRODUCT_CARDS,
+        products=products,
+        page=page,
+        total_pages=total_pages,
+        total=total,
+        selected_category=category_filter,
+        search_query=search_query,
+        get_image_source=get_image_source,
+    )
 
 
 @app.route("/admin/orders")
@@ -1102,8 +1147,35 @@ def admin_orders():
         return redirect(url_for("auth_page"))
 
     page = parse_page_arg()
+    search_query = request.args.get("q", "").strip().lower()
+    status_filter = request.args.get("status", "all").strip().lower()
+    payment_filter = request.args.get("payment", "all").strip().lower()
+    allowed_statuses = {value for value, _ in ORDER_STATUSES}
+    allowed_payments = {value for value, _ in PAYMENT_METHODS}
+    if status_filter not in {"all", *allowed_statuses}:
+        status_filter = "all"
+    if payment_filter not in {"all", *allowed_payments}:
+        payment_filter = "all"
+
     with SessionLocal() as db_session:
-        statement = select(Order).order_by(Order.created_at.desc(), Order.id.desc())
+        statement = select(Order)
+        if status_filter != "all":
+            statement = statement.where(Order.status == status_filter)
+        if payment_filter != "all":
+            statement = statement.where(Order.payment_method == payment_filter)
+        if search_query:
+            pattern = f"%{search_query}%"
+            user_ids_subquery = select(User.id).where(or_(User.username.ilike(pattern), User.email.ilike(pattern)))
+            product_ids_subquery = select(Product.id).where(Product.name.ilike(pattern))
+            conditions = [
+                Order.shipping_address.ilike(pattern),
+                Order.user_id.in_(user_ids_subquery),
+                Order.product_id.in_(product_ids_subquery),
+            ]
+            if search_query.isdigit():
+                conditions.append(Order.id == int(search_query))
+            statement = statement.where(or_(*conditions))
+        statement = statement.order_by(Order.created_at.desc(), Order.id.desc())
         orders, page, total_pages, total = paginate_statement(db_session, statement, page)
 
         user_ids = [order.user_id for order in orders]
@@ -1127,6 +1199,9 @@ def admin_orders():
         page=page,
         total_pages=total_pages,
         total=total,
+        search_query=search_query,
+        selected_status=status_filter,
+        selected_payment=payment_filter,
     )
 
 
@@ -1137,6 +1212,9 @@ def admin_update_order(order_id: int):
         return redirect(url_for("auth_page"))
 
     page = request.form.get("page", "1")
+    search_query = request.form.get("q", "").strip().lower()
+    status_filter = request.form.get("status_filter", "all").strip().lower()
+    payment_filter = request.form.get("payment_filter", "all").strip().lower()
     quantity_raw = request.form.get("quantity", "1").strip()
     shipping_address = request.form.get("shipping_address", "").strip()
     status = normalize_order_status(request.form.get("status"))
@@ -1146,20 +1224,20 @@ def admin_update_order(order_id: int):
         quantity = int(quantity_raw)
     except ValueError:
         flash("Количество должно быть целым числом.")
-        return redirect(url_for("admin_orders", page=page))
+        return redirect(url_for("admin_orders", page=page, q=search_query, status=status_filter, payment=payment_filter))
 
     if quantity <= 0:
         flash("Количество должно быть больше нуля.")
-        return redirect(url_for("admin_orders", page=page))
+        return redirect(url_for("admin_orders", page=page, q=search_query, status=status_filter, payment=payment_filter))
     if not shipping_address:
         flash("Укажите адрес доставки.")
-        return redirect(url_for("admin_orders", page=page))
+        return redirect(url_for("admin_orders", page=page, q=search_query, status=status_filter, payment=payment_filter))
 
     with SessionLocal() as db_session:
         order = db_session.scalar(select(Order).where(Order.id == order_id))
         if order is None:
             flash("Заказ не найден.")
-            return redirect(url_for("admin_orders", page=page))
+            return redirect(url_for("admin_orders", page=page, q=search_query, status=status_filter, payment=payment_filter))
 
         product = db_session.scalar(select(Product).where(Product.id == order.product_id))
         if product is not None:
@@ -1177,7 +1255,7 @@ def admin_update_order(order_id: int):
         db_session.commit()
 
     flash("Заказ обновлён.")
-    return redirect(url_for("admin_orders", page=page))
+    return redirect(url_for("admin_orders", page=page, q=search_query, status=status_filter, payment=payment_filter))
 
 
 @app.post("/admin/orders/<int:order_id>/delete")
@@ -1187,16 +1265,19 @@ def admin_delete_order(order_id: int):
         return redirect(url_for("auth_page"))
 
     page = request.form.get("page", "1")
+    search_query = request.form.get("q", "").strip().lower()
+    status_filter = request.form.get("status_filter", "all").strip().lower()
+    payment_filter = request.form.get("payment_filter", "all").strip().lower()
     with SessionLocal() as db_session:
         order = db_session.scalar(select(Order).where(Order.id == order_id))
         if order is None:
             flash("Заказ не найден.")
-            return redirect(url_for("admin_orders", page=page))
+            return redirect(url_for("admin_orders", page=page, q=search_query, status=status_filter, payment=payment_filter))
         db_session.delete(order)
         db_session.commit()
 
     flash("Заказ удалён.")
-    return redirect(url_for("admin_orders", page=page))
+    return redirect(url_for("admin_orders", page=page, q=search_query, status=status_filter, payment=payment_filter))
 
 
 @app.post("/admin/products/create")

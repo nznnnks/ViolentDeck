@@ -34,6 +34,23 @@
         </div>
         <span class="pagination-label">Всего: {{ total }}</span>
       </div>
+      <form class="filter-row filter-form" method="get" action="{{ url_for('admin_orders') }}">
+        <input name="q" type="search" value="{{ search_query }}" placeholder="Поиск по ID, пользователю, почте, товару, адресу">
+        <select name="status">
+          <option value="all" {% if selected_status == 'all' %}selected{% endif %}>Все статусы</option>
+          {% for status_value, status_label in order_statuses %}
+          <option value="{{ status_value }}" {% if selected_status == status_value %}selected{% endif %}>{{ status_label }}</option>
+          {% endfor %}
+        </select>
+        <select name="payment">
+          <option value="all" {% if selected_payment == 'all' %}selected{% endif %}>Все способы оплаты</option>
+          {% for method_value, method_label in payment_methods %}
+          <option value="{{ method_value }}" {% if selected_payment == method_value %}selected{% endif %}>{{ method_label }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="ghost-button">Фильтровать</button>
+        <a class="ghost-button" href="{{ url_for('admin_orders') }}">Сбросить</a>
+      </form>
       <div class="admin-table-wrap">
         <table class="admin-table">
           <thead>
@@ -59,6 +76,9 @@
                 <td>
                   {{ order.id }}
                   <input type="hidden" name="page" value="{{ page }}">
+                  <input type="hidden" name="q" value="{{ search_query }}">
+                  <input type="hidden" name="status_filter" value="{{ selected_status }}">
+                  <input type="hidden" name="payment_filter" value="{{ selected_payment }}">
                 </td>
                 <td>{{ order.username }}</td>
                 <td>{{ order.email or '—' }}</td>
@@ -95,9 +115,9 @@
     </section>
     {% if total_pages > 1 %}
     <nav class="pagination-bar">
-      <a class="ghost-button{% if page == 1 %} disabled-link{% endif %}" href="{{ url_for('admin_orders', page=page-1) if page > 1 else '#' }}">Назад</a>
+      <a class="ghost-button{% if page == 1 %} disabled-link{% endif %}" href="{{ url_for('admin_orders', page=page-1, q=search_query, status=selected_status, payment=selected_payment) if page > 1 else '#' }}">Назад</a>
       <span class="pagination-label">Страница {{ page }} из {{ total_pages }}</span>
-      <a class="ghost-button{% if page == total_pages %} disabled-link{% endif %}" href="{{ url_for('admin_orders', page=page+1) if page < total_pages else '#' }}">Далее</a>
+      <a class="ghost-button{% if page == total_pages %} disabled-link{% endif %}" href="{{ url_for('admin_orders', page=page+1, q=search_query, status=selected_status, payment=selected_payment) if page < total_pages else '#' }}">Далее</a>
     </nav>
     {% endif %}
   </main>

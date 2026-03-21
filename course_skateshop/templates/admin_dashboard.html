@@ -43,7 +43,7 @@
     <section class="admin-nav-grid">
       <a class="admin-link-card" href="{{ url_for('admin_users') }}">
         <h2>Пользователи</h2>
-        <p>Редактирование логинов, почты, ролей, подтверждения и паролей.</p>
+        <p>Редактирование логинов, почты, ролей и статуса подтверждения.</p>
       </a>
       <a class="admin-link-card" href="{{ url_for('admin_orders') }}">
         <h2>Заказы</h2>
@@ -53,6 +53,21 @@
         <h2>Товары</h2>
         <p>Добавление товаров в категории и просмотр каталога с пагинацией.</p>
       </a>
+    </section>
+    <section class="admin-card">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Фильтры</p>
+          <h2>Быстрые переходы</h2>
+        </div>
+      </div>
+      <div class="filter-row">
+        <a class="ghost-button" href="{{ url_for('admin_users', role='admin') }}">Администраторы</a>
+        <a class="ghost-button" href="{{ url_for('admin_users', verified='unverified') }}">Неподтверждённые</a>
+        <a class="ghost-button" href="{{ url_for('admin_orders', status='new') }}">Новые заказы</a>
+        <a class="ghost-button" href="{{ url_for('admin_orders', payment='online') }}">Онлайн-оплата</a>
+        <a class="ghost-button" href="{{ url_for('admin_products', category='skateboards') }}">Скейтборды</a>
+      </div>
     </section>
   </main>
 </body>
