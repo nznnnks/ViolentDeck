@@ -55,12 +55,13 @@
         <table class="admin-table">
           <thead>
             <tr>
-              <th>ID</th>
+              <th>Заказ</th>
               <th>Пользователь</th>
               <th>Почта</th>
-              <th>Товар</th>
-              <th>Категория</th>
-              <th>Количество</th>
+              <th>Товары</th>
+              <th>Категории</th>
+              <th>Позиций</th>
+              <th>Штук</th>
               <th>Сумма</th>
               <th>Адрес</th>
               <th>Оплата</th>
@@ -82,9 +83,14 @@
                 </td>
                 <td>{{ order.username }}</td>
                 <td>{{ order.email or '—' }}</td>
-                <td>{{ order.product_name }}</td>
-                <td>{{ order.category_slug or '—' }}</td>
-                <td><input name="quantity" type="number" min="1" value="{{ order.quantity }}" required></td>
+                <td>
+                  {% for item in order.items %}
+                  <div>{{ item.product_name }} × {{ item.quantity }}</div>
+                  {% endfor %}
+                </td>
+                <td>{{ order.categories }}</td>
+                <td>{{ order.items_count }}</td>
+                <td>{{ order.total_quantity }}</td>
                 <td>{{ '%.2f'|format(order.total_price) }} ₽</td>
                 <td><textarea name="shipping_address" rows="2" required>{{ order.shipping_address }}</textarea></td>
                 <td>
@@ -104,7 +110,7 @@
                 <td>{{ order.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
                 <td class="order-actions-cell">
                   <button type="submit" class="primary compact-button">Сохранить</button>
-                  <button type="submit" class="ghost-button compact-button" formaction="{{ url_for('admin_delete_order', order_id=order.id) }}" formnovalidate onclick="return confirm('Удалить заказ?')">Удалить</button>
+                  <button type="submit" class="ghost-button compact-button" formaction="{{ url_for('admin_delete_order', order_id=order.id) }}" formnovalidate onclick="return confirm('Удалить заказ целиком?')">Удалить</button>
                 </td>
               </form>
             </tr>

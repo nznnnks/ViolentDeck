@@ -66,21 +66,15 @@
       {% if orders %}
       <div class="orders-grid">
         {% for order in orders %}
-        <article class="order-card">
-          {% if order.product_image_url %}
-          <img class="order-card-image" src="{{ get_image_source(order.product_image_url) }}" alt="{{ order.product_name }}">
+        <a class="order-card order-link" href="{{ url_for('order_detail', order_id=order.id) }}">
+          {% if order.first_product_image_url %}
+          <img class="order-card-image" src="{{ get_image_source(order.first_product_image_url) }}" alt="Заказ №{{ order.id }}">
           {% endif %}
           <div class="order-card-body">
-            <h3>{{ order.product_name }}</h3>
-            <p>Заказ №{{ order.id }}</p>
-            <p>Статус: {{ order.status }}</p>
-            <p>Количество: {{ order.quantity }}</p>
-            <p>Оплата: {{ order.payment_method_label }}</p>
-            <p>Адрес: {{ order.shipping_address }}</p>
-            <p>Дата: {{ order.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
-            <strong class="price-label">{{ '%.2f'|format(order.total_price) }} ₽</strong>
+            <h3>Заказ №{{ order.id }}</h3>
+            <p class="pagination-label">Товаров: {{ order.items_count }}</p>
           </div>
-        </article>
+        </a>
         {% endfor %}
       </div>
       {% else %}

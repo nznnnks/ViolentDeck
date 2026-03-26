@@ -3,6 +3,7 @@ import random
 import smtplib
 from datetime import datetime, timedelta
 from email.message import EmailMessage
+from uuid import uuid4
 
 from flask import Flask, flash, redirect, render_template, request, session, url_for
 from sqlalchemy import (
@@ -40,7 +41,6 @@ ORDER_STATUSES = [
 PAYMENT_METHODS = [
     ("cash", "Наличными при получении"),
     ("card", "Картой при получении"),
-    ("online", "Онлайн-оплата"),
 ]
 
 
@@ -80,6 +80,7 @@ class Order(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    checkout_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="")
     product_id: Mapped[int] = mapped_column(nullable=False, index=True)
     quantity: Mapped[int] = mapped_column(nullable=False, default=1)
     total_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
@@ -148,6 +149,15 @@ def paginate_statement(db_session, statement, page: int):
     page = min(max(1, page), total_pages)
     items = list(db_session.scalars(statement.limit(PAGE_SIZE).offset((page - 1) * PAGE_SIZE)))
     return items, page, total_pages, total
+
+
+def paginate_list(items: list, page: int):
+    total = len(items)
+    total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = min(max(1, page), total_pages)
+    start_index = (page - 1) * PAGE_SIZE
+    end_index = start_index + PAGE_SIZE
+    return items[start_index:end_index], page, total_pages, total
 
 
 def user_to_dict(user: User) -> dict:
@@ -220,9 +230,79 @@ def get_cart_count() -> int:
     return sum(get_cart().values())
 
 
+def get_checkout_id(order: Order) -> str:
+    return order.checkout_id or f"legacy-{order.id}"
+
+
+def build_grouped_orders(
+    orders: list[Order],
+    products_by_id: dict[int, Product],
+    users_by_id: dict[int, User] | None = None,
+) -> list[dict]:
+    grouped_orders: dict[str, dict] = {}
+
+    for order in orders:
+        checkout_id = get_checkout_id(order)
+        product = products_by_id.get(order.product_id)
+        order_group = grouped_orders.get(checkout_id)
+
+        if order_group is None:
+            user = users_by_id.get(order.user_id) if users_by_id is not None else None
+            order_group = {
+                "id": order.id,
+                "checkout_id": checkout_id,
+                "status": order.status,
+                "shipping_address": order.shipping_address,
+                "payment_method": order.payment_method,
+                "payment_method_label": get_payment_method_label(order.payment_method),
+                "created_at": order.created_at,
+                "total_price": Decimal("0.00"),
+                "total_quantity": 0,
+                "items_count": 0,
+                "username": user.username if user is not None else "Пользователь удалён",
+                "email": user.email if user is not None else "",
+                "items": [],
+                "categories": set(),
+                "first_product_image_url": product.image_url if product is not None else "",
+            }
+            grouped_orders[checkout_id] = order_group
+
+        order_group["id"] = min(order_group["id"], order.id)
+        order_group["created_at"] = min(order_group["created_at"], order.created_at)
+        order_group["total_price"] += Decimal(order.total_price)
+        order_group["total_quantity"] += order.quantity
+        order_group["items_count"] += 1
+
+        if product is not None:
+            order_group["categories"].add(product.category_slug)
+            if not order_group["first_product_image_url"]:
+                order_group["first_product_image_url"] = product.image_url
+
+        order_group["items"].append(
+            {
+                "order_row_id": order.id,
+                "product_id": order.product_id,
+                "product_name": product.name if product is not None else "Товар удалён",
+                "product_image_url": product.image_url if product is not None else "",
+                "category_slug": product.category_slug if product is not None else "",
+                "quantity": order.quantity,
+                "total_price": order.total_price,
+            }
+        )
+
+    grouped_list = list(grouped_orders.values())
+    for order_group in grouped_list:
+        order_group["items"].sort(key=lambda item: item["order_row_id"])
+        order_group["categories"] = ", ".join(sorted({category for category in order_group["categories"] if category})) or "—"
+
+    grouped_list.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
+    return grouped_list
+
+
 def serialize_order(order: Order, product: Product | None) -> dict:
     return {
         "id": order.id,
+        "checkout_id": get_checkout_id(order),
         "quantity": order.quantity,
         "status": order.status,
         "total_price": order.total_price,
@@ -239,6 +319,7 @@ def serialize_order(order: Order, product: Product | None) -> dict:
 def serialize_admin_order(order: Order, user: User | None, product: Product | None) -> dict:
     return {
         "id": order.id,
+        "checkout_id": get_checkout_id(order),
         "quantity": order.quantity,
         "status": order.status,
         "total_price": order.total_price,
@@ -326,13 +407,64 @@ def ensure_order_table_columns() -> None:
         alter_statements.append(
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method VARCHAR(30) NOT NULL DEFAULT 'cash'"
         )
+    if "checkout_id" not in existing_columns:
+        alter_statements.append(
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS checkout_id VARCHAR(32) NOT NULL DEFAULT ''"
+        )
 
     if not alter_statements:
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE orders SET checkout_id = CONCAT('legacy-', id) WHERE checkout_id IS NULL OR checkout_id = ''"))
         return
 
     with engine.begin() as connection:
         for statement in alter_statements:
             connection.execute(text(statement))
+        connection.execute(text("UPDATE orders SET checkout_id = CONCAT('legacy-', id) WHERE checkout_id IS NULL OR checkout_id = ''"))
+
+
+def backfill_historical_checkout_ids() -> None:
+    with SessionLocal() as db_session:
+        orders = list(
+            db_session.scalars(
+                select(Order).order_by(Order.user_id.asc(), Order.created_at.asc(), Order.id.asc())
+            )
+        )
+        if not orders:
+            return
+
+        current_group: list[Order] = []
+
+        def flush_group() -> None:
+            if len(current_group) < 2:
+                return
+            checkout_id = uuid4().hex
+            for grouped_order in current_group:
+                grouped_order.checkout_id = checkout_id
+
+        for order in orders:
+            if not current_group:
+                current_group = [order]
+                continue
+
+            previous_order = current_group[-1]
+            same_customer = order.user_id == previous_order.user_id
+            same_address = order.shipping_address == previous_order.shipping_address
+            same_payment = order.payment_method == previous_order.payment_method
+            same_status = order.status == previous_order.status
+            close_in_time = abs((order.created_at - previous_order.created_at).total_seconds()) <= 5
+            current_is_legacy = order.checkout_id.startswith("legacy-")
+            previous_is_legacy = previous_order.checkout_id.startswith("legacy-")
+
+            if same_customer and same_address and same_payment and same_status and close_in_time and current_is_legacy and previous_is_legacy:
+                current_group.append(order)
+                continue
+
+            flush_group()
+            current_group = [order]
+
+        flush_group()
+        db_session.commit()
 
 
 def ensure_seed_user(seed_user: dict) -> None:
@@ -357,6 +489,7 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
     ensure_user_table_columns()
     ensure_order_table_columns()
+    backfill_historical_checkout_ids()
     ensure_seed_user(DEFAULT_USER)
     ensure_seed_user(ADMIN_USER)
 
@@ -857,6 +990,7 @@ def create_order():
         products = list(db_session.scalars(select(Product).where(Product.id.in_(product_ids)))) if product_ids else []
         products_by_id = {product.id: product for product in products}
         created_orders = 0
+        checkout_id = uuid4().hex
 
         for product_id, quantity in cart.items():
             try:
@@ -869,6 +1003,7 @@ def create_order():
             db_session.add(
                 Order(
                     user_id=user.id,
+                    checkout_id=checkout_id,
                     product_id=product.id,
                     quantity=quantity,
                     total_price=product.price * quantity,
@@ -902,15 +1037,52 @@ def profile():
                 select(Order)
                 .where(Order.user_id == user.id)
                 .order_by(Order.created_at.desc(), Order.id.desc())
-                .limit(10)
             )
         )
         product_ids = [order.product_id for order in orders]
         products = list(db_session.scalars(select(Product).where(Product.id.in_(product_ids)))) if product_ids else []
 
     products_by_id = {product.id: product for product in products}
-    orders_data = [serialize_order(order, products_by_id.get(order.product_id)) for order in orders]
+    orders_data = build_grouped_orders(orders, products_by_id)[:10]
     return render_template("profile.html", user=user_to_dict(user), orders=orders_data, get_image_source=get_image_source)
+
+
+@app.route("/orders/<int:order_id>")
+def order_detail(order_id: int):
+    user = get_authenticated_user()
+    if user is None:
+        return redirect(url_for("auth_page"))
+    if user.role == "admin":
+        return redirect(url_for("admin_orders"))
+
+    with SessionLocal() as db_session:
+        anchor_order = db_session.scalar(select(Order).where(Order.id == order_id, Order.user_id == user.id))
+        if anchor_order is None:
+            flash("Заказ не найден.")
+            return redirect(url_for("profile"))
+
+        checkout_id = get_checkout_id(anchor_order)
+        order_rows = list(
+            db_session.scalars(
+                select(Order)
+                .where(Order.user_id == user.id, Order.checkout_id == checkout_id)
+                .order_by(Order.id.asc())
+            )
+        )
+        if not order_rows:
+            order_rows = [anchor_order]
+        product_ids = [order.product_id for order in order_rows]
+        products = list(db_session.scalars(select(Product).where(Product.id.in_(product_ids)))) if product_ids else []
+
+    products_by_id = {product.id: product for product in products}
+    grouped_orders = build_grouped_orders(order_rows, products_by_id)
+    order_data = grouped_orders[0] if grouped_orders else build_grouped_orders([anchor_order], products_by_id)[0]
+    return render_template(
+        "order_detail.html",
+        user=user_to_dict(user),
+        order=order_data,
+        get_image_source=get_image_source,
+    )
 
 
 @app.post("/profile/password/send-code")
@@ -1259,7 +1431,18 @@ def admin_orders():
                 conditions.append(Order.id == int(search_query))
             statement = statement.where(or_(*conditions))
         statement = statement.order_by(Order.created_at.desc(), Order.id.desc())
-        orders, page, total_pages, total = paginate_statement(db_session, statement, page)
+        matched_orders = list(db_session.scalars(statement))
+        checkout_ids = [get_checkout_id(order) for order in matched_orders]
+        if checkout_ids:
+            orders = list(
+                db_session.scalars(
+                    select(Order)
+                    .where(Order.checkout_id.in_(checkout_ids))
+                    .order_by(Order.created_at.desc(), Order.id.desc())
+                )
+            )
+        else:
+            orders = []
 
         user_ids = [order.user_id for order in orders]
         product_ids = [order.product_id for order in orders]
@@ -1268,10 +1451,8 @@ def admin_orders():
 
     users_by_id = {user.id: user for user in users}
     products_by_id = {product.id: product for product in products}
-    orders_data = [
-        serialize_admin_order(order, users_by_id.get(order.user_id), products_by_id.get(order.product_id))
-        for order in orders
-    ]
+    orders_data = build_grouped_orders(orders, products_by_id, users_by_id)
+    orders_data, page, total_pages, total = paginate_list(orders_data, page)
 
     return render_template(
         "admin_orders.html",
@@ -1298,43 +1479,27 @@ def admin_update_order(order_id: int):
     search_query = request.form.get("q", "").strip().lower()
     status_filter = request.form.get("status_filter", "all").strip().lower()
     payment_filter = request.form.get("payment_filter", "all").strip().lower()
-    quantity_raw = request.form.get("quantity", "1").strip()
     shipping_address = request.form.get("shipping_address", "").strip()
     status = normalize_order_status(request.form.get("status"))
     payment_method = normalize_payment_method(request.form.get("payment_method"))
-
-    try:
-        quantity = int(quantity_raw)
-    except ValueError:
-        flash("Количество должно быть целым числом.")
-        return redirect(url_for("admin_orders", page=page, q=search_query, status=status_filter, payment=payment_filter))
-
-    if quantity <= 0:
-        flash("Количество должно быть больше нуля.")
-        return redirect(url_for("admin_orders", page=page, q=search_query, status=status_filter, payment=payment_filter))
     if not shipping_address:
         flash("Укажите адрес доставки.")
         return redirect(url_for("admin_orders", page=page, q=search_query, status=status_filter, payment=payment_filter))
 
     with SessionLocal() as db_session:
-        order = db_session.scalar(select(Order).where(Order.id == order_id))
-        if order is None:
+        anchor_order = db_session.scalar(select(Order).where(Order.id == order_id))
+        if anchor_order is None:
             flash("Заказ не найден.")
             return redirect(url_for("admin_orders", page=page, q=search_query, status=status_filter, payment=payment_filter))
+        checkout_id = get_checkout_id(anchor_order)
+        orders = list(db_session.scalars(select(Order).where(Order.checkout_id == checkout_id)))
+        if not orders:
+            orders = [anchor_order]
 
-        product = db_session.scalar(select(Product).where(Product.id == order.product_id))
-        if product is not None:
-            unit_price = product.price
-        elif order.quantity > 0:
-            unit_price = (Decimal(order.total_price) / Decimal(order.quantity)).quantize(Decimal("0.01"))
-        else:
-            unit_price = Decimal(order.total_price)
-
-        order.quantity = quantity
-        order.shipping_address = shipping_address
-        order.payment_method = payment_method
-        order.status = status
-        order.total_price = (unit_price * quantity).quantize(Decimal("0.01"))
+        for order in orders:
+            order.shipping_address = shipping_address
+            order.payment_method = payment_method
+            order.status = status
         db_session.commit()
 
     flash("Заказ обновлён.")
@@ -1352,11 +1517,16 @@ def admin_delete_order(order_id: int):
     status_filter = request.form.get("status_filter", "all").strip().lower()
     payment_filter = request.form.get("payment_filter", "all").strip().lower()
     with SessionLocal() as db_session:
-        order = db_session.scalar(select(Order).where(Order.id == order_id))
-        if order is None:
+        anchor_order = db_session.scalar(select(Order).where(Order.id == order_id))
+        if anchor_order is None:
             flash("Заказ не найден.")
             return redirect(url_for("admin_orders", page=page, q=search_query, status=status_filter, payment=payment_filter))
-        db_session.delete(order)
+        checkout_id = get_checkout_id(anchor_order)
+        orders = list(db_session.scalars(select(Order).where(Order.checkout_id == checkout_id)))
+        if not orders:
+            orders = [anchor_order]
+        for order in orders:
+            db_session.delete(order)
         db_session.commit()
 
     flash("Заказ удалён.")

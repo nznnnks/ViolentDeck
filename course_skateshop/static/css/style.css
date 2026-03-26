@@ -337,6 +337,15 @@ textarea {
   overflow: hidden;
 }
 
+.order-link {
+  color: inherit;
+  display: block;
+}
+
+.order-link:hover {
+  border-color: rgba(168, 85, 247, 0.6);
+}
+
 .order-card-image {
   width: 100%;
   height: 180px;
@@ -346,6 +355,36 @@ textarea {
 
 .order-card-body {
   padding: 1.25rem 1.5rem 1.5rem;
+}
+
+.order-items-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.order-item-row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 1rem;
+  align-items: center;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #1f1f1f;
+}
+
+.order-item-row:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.order-item-thumb {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 0.75rem;
+}
+
+.order-item-content h3 {
+  margin: 0 0 0.4rem;
 }
 
 .profile-grid {
@@ -450,6 +489,22 @@ textarea {
 .admin-table {
   width: 100%;
   border-collapse: collapse;
+}
+
+.admin-table input[type="text"],
+.admin-table input[type="email"],
+.admin-table input[type="search"],
+.admin-table select,
+.admin-table textarea {
+  min-width: 260px;
+}
+
+.admin-table select {
+  min-width: 200px;
+}
+
+.admin-table textarea {
+  min-width: 320px;
 }
 
 .admin-table th,

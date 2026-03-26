@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ViolentDeck — Заказ №{{ order.id }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-actions">
+      <a class="ghost-button" href="{{ url_for('shop') }}">Магазин</a>
+      <a class="ghost-button" href="{{ url_for('profile') }}">Профиль</a>
+      <a class="ghost-button" href="{{ url_for('cart_page') }}">Корзина{% if cart_count %} ({{ cart_count }}){% endif %}</a>
+    </div>
+    <div class="brand-name">ViolentDeck</div>
+    <a class="ghost-button" href="{{ url_for('logout') }}">Выход</a>
+  </header>
+  <main class="profile-page">
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash-box">
+        {% for message in messages %}
+          <p>{{ message }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% endwith %}
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Заказ</p>
+        <h1>Заказ №{{ order.id }}</h1>
+      </div>
+      <a class="ghost-button" href="{{ url_for('profile') }}">Назад</a>
+    </div>
+    <section class="profile-grid">
+      <article class="profile-card">
+        <div class="profile-item"><span>Статус</span><strong>{{ order.status }}</strong></div>
+        <div class="profile-item"><span>Оплата</span><strong>{{ order.payment_method_label }}</strong></div>
+        <div class="profile-item"><span>Адрес</span><strong>{{ order.shipping_address }}</strong></div>
+        <div class="profile-item"><span>Позиций</span><strong>{{ order.items_count }}</strong></div>
+        <div class="profile-item"><span>Количество</span><strong>{{ order.total_quantity }}</strong></div>
+        <div class="profile-item"><span>Дата</span><strong>{{ order.created_at.strftime('%d.%m.%Y %H:%M') }}</strong></div>
+        <div class="profile-item"><span>Сумма</span><strong>{{ '%.2f'|format(order.total_price) }} ₽</strong></div>
+      </article>
+      <article class="profile-card">
+        <p class="eyebrow">Состав</p>
+        <div class="order-items-list">
+          {% for item in order.items %}
+          <article class="order-item-row">
+            {% if item.product_image_url %}
+            <img class="order-item-thumb" src="{{ get_image_source(item.product_image_url) }}" alt="{{ item.product_name }}">
+            {% endif %}
+            <div class="order-item-content">
+              <h3>{{ item.product_name }}</h3>
+              <p>Количество: {{ item.quantity }}</p>
+              <strong class="price-label">{{ '%.2f'|format(item.total_price) }} ₽</strong>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
