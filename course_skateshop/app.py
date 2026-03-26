@@ -106,6 +106,19 @@ class Order(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class ActionLog(Base):
+    __tablename__ = "action_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(50), nullable=False, default="anonymous")
+    method: Mapped[str] = mapped_column(String(10), nullable=False)
+    path: Mapped[str] = mapped_column(String(255), nullable=False)
+    endpoint: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    status_code: Mapped[int] = mapped_column(nullable=False, default=200)
+    details: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+
 DEFAULT_USER = {
     "username": "violent",
     "password": "deck123",
@@ -262,6 +275,18 @@ def parse_datetime_value(raw_value: str | None) -> datetime | None:
         return datetime.fromisoformat(raw_value)
     except ValueError:
         return None
+
+
+def build_request_details() -> str:
+    if request.method == "GET":
+        return ""
+
+    safe_fields = []
+    for key, value in request.form.items():
+        if any(secret_key in key.lower() for secret_key in ("password", "code", "token")):
+            continue
+        safe_fields.append(f"{key}={value}")
+    return ", ".join(safe_fields)
 
 
 def ensure_category_for_import(db_session, category_slug: str) -> Category:
@@ -603,6 +628,37 @@ def init_db() -> None:
     ensure_seed_categories()
     ensure_seed_user(DEFAULT_USER)
     ensure_seed_user(ADMIN_USER)
+
+
+@app.after_request
+def persist_action_log(response):
+    if request.path.startswith("/static/"):
+        return response
+    if request.endpoint in {None, "persist_action_log"}:
+        return response
+    if request.method == "OPTIONS":
+        return response
+
+    username = session.get("user") or "anonymous"
+    details = build_request_details()
+
+    try:
+        with SessionLocal() as db_session:
+            db_session.add(
+                ActionLog(
+                    username=username,
+                    method=request.method,
+                    path=request.path,
+                    endpoint=request.endpoint or "",
+                    status_code=response.status_code,
+                    details=details,
+                )
+            )
+            db_session.commit()
+    except Exception:
+        pass
+
+    return response
 
 def get_user_by_username(username: str | None) -> User | None:
     if not username:
@@ -1291,6 +1347,37 @@ def admin_dashboard():
             category_counts.append({"title": category.title, "count": count})
 
     return render_template("admin_dashboard.html", user=user_to_dict(admin_user), users_count=users_count, products_count=products_count, category_counts=category_counts)
+
+
+@app.get("/admin/logs/export")
+def admin_export_logs():
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    time_from = datetime.utcnow() - timedelta(minutes=10)
+    with SessionLocal() as db_session:
+        logs = list(
+            db_session.scalars(
+                select(ActionLog)
+                .where(ActionLog.created_at >= time_from)
+                .order_by(ActionLog.created_at.desc(), ActionLog.id.desc())
+            )
+        )
+
+    lines = []
+    for log in logs:
+        base_line = f"[{log.created_at.strftime('%Y-%m-%d %H:%M:%S')}] {log.username} {log.method} {log.path} endpoint={log.endpoint} status={log.status_code}"
+        if log.details:
+            base_line += f" details={log.details}"
+        lines.append(base_line)
+
+    content = "\n".join(lines) if lines else "За последние 10 минут действий не найдено."
+    return Response(
+        content,
+        mimetype="text/plain; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="app-actions-last-10-minutes.log"'},
+    )
 
 
 @app.route("/admin/users")
