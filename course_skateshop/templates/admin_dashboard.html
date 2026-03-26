@@ -31,6 +31,7 @@
         <h1>Админ-панель</h1>
         <div class="profile-item"><span>Пользователи</span><strong>{{ users_count }}</strong></div>
         <div class="profile-item"><span>Товары</span><strong>{{ products_count }}</strong></div>
+        <div class="profile-item"><span>Заказы</span><strong>{{ orders_count }}</strong></div>
       </article>
       <article class="admin-card">
         <p class="eyebrow">Разделы</p>
@@ -67,6 +68,16 @@
         <a class="ghost-button" href="{{ url_for('admin_orders', status='new') }}">Новые заказы</a>
         <a class="ghost-button" href="{{ url_for('admin_products', category='skateboards') }}">Скейтборды</a>
       </div>
+    </section>
+    <section class="admin-card">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Аналитика</p>
+          <h2>Графики и диаграммы</h2>
+        </div>
+      </div>
+      <p>Скачивает HTML-отчёт с аналитикой по товарам, пользователям и заказам: количество заказов, популярные товары, активные покупатели и другие срезы.</p>
+      <a class="ghost-button" href="{{ url_for('admin_export_analytics') }}">Скачать аналитику</a>
     </section>
     <section class="admin-card">
       <div class="section-head">

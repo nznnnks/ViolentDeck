@@ -1,4 +1,5 @@
 ﻿from decimal import Decimal, InvalidOperation
+from collections import defaultdict
 import json
 import random
 import re
@@ -189,6 +190,24 @@ def paginate_list(items: list, page: int):
     return items[start_index:end_index], page, total_pages, total
 
 
+def format_currency(value: Decimal | int | float) -> str:
+    return f"{Decimal(value):.2f} ₽"
+
+
+def build_chart_rows(items: list[dict], value_key: str = "value") -> list[dict]:
+    max_value = max((float(item.get(value_key, 0) or 0) for item in items), default=0)
+    rows = []
+    for item in items:
+        value = float(item.get(value_key, 0) or 0)
+        percent = 0 if max_value <= 0 else round((value / max_value) * 100, 2)
+        if value > 0 and percent < 8:
+            percent = 8
+        row = dict(item)
+        row["percent"] = percent
+        rows.append(row)
+    return rows
+
+
 def user_to_dict(user: User) -> dict:
     return {
         "id": user.id,
@@ -358,6 +377,7 @@ def build_grouped_orders(
             order_group = {
                 "id": order.id,
                 "checkout_id": checkout_id,
+                "user_id": order.user_id,
                 "status": order.status,
                 "shipping_address": order.shipping_address,
                 "payment_method": order.payment_method,
@@ -404,6 +424,159 @@ def build_grouped_orders(
 
     grouped_list.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
     return grouped_list
+
+
+def build_admin_analytics(db_session) -> dict:
+    users = list(db_session.scalars(select(User).order_by(User.id.asc())))
+    categories = list(db_session.scalars(select(Category).order_by(Category.created_at.asc(), Category.id.asc())))
+    products = list(db_session.scalars(select(Product).order_by(Product.id.asc())))
+    orders = list(db_session.scalars(select(Order).order_by(Order.created_at.desc(), Order.id.desc())))
+
+    users_by_id = {user.id: user for user in users}
+    products_by_id = {product.id: product for product in products}
+    grouped_orders = build_grouped_orders(orders, products_by_id, users_by_id)
+
+    verified_users_count = sum(1 for user in users if user.is_verified)
+    admins_count = sum(1 for user in users if user.role == "admin")
+    total_revenue = sum((Decimal(order_group["total_price"]) for order_group in grouped_orders), Decimal("0.00"))
+
+    product_units: dict[int, int] = defaultdict(int)
+    product_revenue: dict[int, Decimal] = defaultdict(lambda: Decimal("0.00"))
+    product_checkouts: dict[int, set[str]] = defaultdict(set)
+    category_units: dict[str, int] = defaultdict(int)
+    category_revenue: dict[str, Decimal] = defaultdict(lambda: Decimal("0.00"))
+    category_products_count: dict[str, int] = defaultdict(int)
+    for product in products:
+        category_products_count[product.category_slug] += 1
+
+    for order in orders:
+        product = products_by_id.get(order.product_id)
+        if product is None:
+            continue
+        checkout_id = get_checkout_id(order)
+        product_units[product.id] += order.quantity
+        product_revenue[product.id] += Decimal(order.total_price)
+        product_checkouts[product.id].add(checkout_id)
+        category_units[product.category_slug] += order.quantity
+        category_revenue[product.category_slug] += Decimal(order.total_price)
+
+    top_products = []
+    for product in products:
+        units_sold = product_units.get(product.id, 0)
+        orders_count = len(product_checkouts.get(product.id, set()))
+        revenue = product_revenue.get(product.id, Decimal("0.00"))
+        if units_sold <= 0 and orders_count <= 0 and revenue <= 0:
+            continue
+        top_products.append(
+            {
+                "label": product.name,
+                "value": units_sold,
+                "description": f"{orders_count} заказов · {format_currency(revenue)}",
+            }
+        )
+    top_products.sort(key=lambda item: (-item["value"], item["label"]))
+    top_products = build_chart_rows(top_products[:7])
+
+    category_sales = []
+    category_catalog_rows = []
+    for category in categories:
+        units_sold = category_units.get(category.slug, 0)
+        revenue = category_revenue.get(category.slug, Decimal("0.00"))
+        products_count = category_products_count.get(category.slug, 0)
+        if units_sold > 0 or revenue > 0:
+            category_sales.append(
+                {
+                    "label": category.title,
+                    "value": units_sold,
+                    "description": format_currency(revenue),
+                }
+            )
+        category_catalog_rows.append(
+            {
+                "label": category.title,
+                "value": products_count,
+                "description": category.description,
+            }
+        )
+    category_sales.sort(key=lambda item: (-item["value"], item["label"]))
+    category_sales = build_chart_rows(category_sales[:7])
+    category_catalog_rows.sort(key=lambda item: (-item["value"], item["label"]))
+    category_catalog_rows = build_chart_rows(category_catalog_rows)
+
+    order_status_counts: dict[str, int] = defaultdict(int)
+    payment_method_counts: dict[str, int] = defaultdict(int)
+    top_users_map: dict[int, dict] = {}
+    for order_group in grouped_orders:
+        order_status_counts[order_group["status"]] += 1
+        payment_method_counts[order_group["payment_method"]] += 1
+        user_stats = top_users_map.setdefault(
+            order_group["user_id"],
+            {
+                "label": order_group["username"],
+                "value": 0,
+                "spent": Decimal("0.00"),
+                "description": order_group["email"] or "без почты",
+            },
+        )
+        user_stats["value"] += 1
+        user_stats["spent"] += Decimal(order_group["total_price"])
+
+    top_users = []
+    for stats in top_users_map.values():
+        top_users.append(
+            {
+                "label": stats["label"],
+                "value": stats["value"],
+                "description": f"{stats['description']} · {format_currency(stats['spent'])}",
+            }
+        )
+    top_users.sort(key=lambda item: (-item["value"], item["label"]))
+    top_users = build_chart_rows(top_users[:7])
+
+    status_rows = build_chart_rows(
+        [
+            {
+                "label": label,
+                "value": order_status_counts.get(value, 0),
+                "description": f"{order_status_counts.get(value, 0)} заказов",
+            }
+            for value, label in ORDER_STATUSES
+            if order_status_counts.get(value, 0) > 0
+        ]
+    )
+    payment_rows = build_chart_rows(
+        [
+            {
+                "label": label,
+                "value": payment_method_counts.get(value, 0),
+                "description": f"{payment_method_counts.get(value, 0)} заказов",
+            }
+            for value, label in PAYMENT_METHODS
+            if payment_method_counts.get(value, 0) > 0
+        ]
+    )
+
+    return {
+        "generated_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
+        "summary": {
+            "users_count": len(users),
+            "verified_users_count": verified_users_count,
+            "admins_count": admins_count,
+            "customers_count": len(users) - admins_count,
+            "products_count": len(products),
+            "categories_count": len(categories),
+            "orders_count": len(grouped_orders),
+            "total_revenue": format_currency(total_revenue),
+            "most_popular_product": top_products[0]["label"] if top_products else "Нет данных",
+            "top_buyer": top_users[0]["label"] if top_users else "Нет данных",
+        },
+        "top_products": top_products,
+        "category_sales": category_sales,
+        "category_catalog_rows": category_catalog_rows,
+        "top_users": top_users,
+        "status_rows": status_rows,
+        "payment_rows": payment_rows,
+    }
 
 
 def serialize_order(order: Order, product: Product | None) -> dict:
@@ -1340,13 +1513,21 @@ def admin_dashboard():
     with SessionLocal() as db_session:
         users_count = db_session.scalar(select(func.count(User.id))) or 0
         products_count = db_session.scalar(select(func.count(Product.id))) or 0
+        orders_count = db_session.scalar(select(func.count(func.distinct(Order.checkout_id)))) or 0
         categories = list(db_session.scalars(select(Category).order_by(Category.created_at.asc(), Category.id.asc())))
         category_counts = []
         for category in categories:
             count = db_session.scalar(select(func.count(Product.id)).where(Product.category_slug == category.slug)) or 0
             category_counts.append({"title": category.title, "count": count})
 
-    return render_template("admin_dashboard.html", user=user_to_dict(admin_user), users_count=users_count, products_count=products_count, category_counts=category_counts)
+    return render_template(
+        "admin_dashboard.html",
+        user=user_to_dict(admin_user),
+        users_count=users_count,
+        products_count=products_count,
+        orders_count=orders_count,
+        category_counts=category_counts,
+    )
 
 
 @app.get("/admin/logs/export")
@@ -1377,6 +1558,22 @@ def admin_export_logs():
         content,
         mimetype="text/plain; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="app-actions-last-10-minutes.log"'},
+    )
+
+
+@app.get("/admin/analytics/export")
+def admin_export_analytics():
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    with SessionLocal() as db_session:
+        analytics = build_admin_analytics(db_session)
+
+    return Response(
+        render_template("admin_analytics_report.html", analytics=analytics, user=user_to_dict(admin_user)),
+        mimetype="text/html; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="admin-analytics-report.html"'},
     )
 
 
