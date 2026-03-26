@@ -415,7 +415,7 @@ textarea {
 .cards {
   display: grid;
   gap: 1.25rem;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .card {
@@ -590,6 +590,10 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .cards {
+    grid-template-columns: 1fr;
+  }
+
   .admin-product-card {
     grid-template-columns: 1fr;
   }
@@ -602,6 +606,10 @@ textarea {
 
 @media (min-width: 721px) and (max-width: 1024px) {
   .catalog-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

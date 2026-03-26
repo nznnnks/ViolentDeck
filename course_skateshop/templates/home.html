@@ -34,7 +34,7 @@
       {% for product in products %}
         <article class="card">
           <figure class="card-media">
-            <img class="card-img" src="{{ url_for('static', filename=product.image) }}" alt="{{ product.title }}">
+            <img class="card-img" src="{{ get_image_source(product.image) }}" alt="{{ product.title }}">
           </figure>
           <p class="card-tag">{{ product.accent.upper() }}</p>
           <h2>{{ product.title }}</h2>

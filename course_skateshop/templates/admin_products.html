@@ -28,6 +28,22 @@
     {% endwith %}
     <section class="admin-grid">
       <article class="admin-card">
+        <p class="eyebrow">Категории</p>
+        <h1>Новая категория</h1>
+        <form class="admin-form" action="{{ url_for('admin_create_category') }}" method="post">
+          <label>Название
+            <input name="title" type="text" placeholder="Например, Обувь" required>
+          </label>
+          <label>Описание
+            <textarea name="description" rows="4" placeholder="Описание категории" required></textarea>
+          </label>
+          <label>Фото
+            <input name="image" type="text" placeholder="Ссылка или static-путь, например images/skate.png">
+          </label>
+          <button type="submit" class="primary">Добавить категорию</button>
+        </form>
+      </article>
+      <article class="admin-card">
         <p class="eyebrow">Добавление</p>
         <h1>Новый товар</h1>
         <form class="admin-form" action="{{ url_for('admin_create_product') }}" method="post">
@@ -62,6 +78,13 @@
           </div>
           <span class="pagination-label">Всего: {{ total }}</span>
         </div>
+        <div class="filter-row">
+          <a class="ghost-button" href="{{ url_for('admin_export_products') }}">Экспорт JSON</a>
+          <form class="filter-row" action="{{ url_for('admin_import_products') }}" method="post" enctype="multipart/form-data">
+            <input name="file" type="file" accept=".json,application/json" required>
+            <button type="submit" class="ghost-button">Импорт JSON</button>
+          </form>
+        </div>
         <form class="filter-row filter-form" method="get" action="{{ url_for('admin_products') }}">
           <input name="q" type="search" value="{{ search_query }}" placeholder="Поиск по названию или описанию">
           <select name="category">
@@ -84,10 +107,33 @@
           <article class="admin-product-card">
             <img class="admin-product-image" src="{{ get_image_source(product.image_url) }}" alt="{{ product.name }}">
             <div class="admin-product-body">
-              <p class="card-tag">{{ product.category_slug.upper() }}</p>
-              <h3>{{ product.name }}</h3>
-              <p>{{ product.description }}</p>
-              <strong class="price-label">{{ '%.2f'|format(product.price) }} ₽</strong>
+              <form action="{{ url_for('admin_update_product', product_id=product.id) }}" method="post" class="admin-form">
+                <input type="hidden" name="page" value="{{ page }}">
+                <input type="hidden" name="category_filter" value="{{ selected_category }}">
+                <input type="hidden" name="q" value="{{ search_query }}">
+                <label>Категория
+                  <select name="category_slug" required>
+                    {% for category in categories %}
+                    <option value="{{ category.slug }}" {% if product.category_slug == category.slug %}selected{% endif %}>{{ category.title }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <label>Название
+                  <input name="name" type="text" value="{{ product.name }}" required>
+                </label>
+                <label>Описание
+                  <textarea name="description" rows="4" required>{{ product.description }}</textarea>
+                </label>
+                <label>Фото
+                  <input name="image_url" type="text" value="{{ product.image_url }}">
+                </label>
+                <label>Цена
+                  <input name="price" type="text" value="{{ '%.2f'|format(product.price) }}" required>
+                </label>
+                <div class="admin-product-actions">
+                  <button type="submit" class="primary compact-button">Сохранить</button>
+                </div>
+              </form>
               <form action="{{ url_for('admin_delete_product', product_id=product.id) }}" method="post" class="admin-product-actions">
                 <input type="hidden" name="page" value="{{ page }}">
                 <input type="hidden" name="category_filter" value="{{ selected_category }}">

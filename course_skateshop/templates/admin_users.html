@@ -61,6 +61,13 @@
           </div>
           <span class="pagination-label">Всего: {{ total }}</span>
         </div>
+        <div class="filter-row">
+          <a class="ghost-button" href="{{ url_for('admin_export_users') }}">Экспорт JSON</a>
+          <form class="filter-row" action="{{ url_for('admin_import_users') }}" method="post" enctype="multipart/form-data">
+            <input name="file" type="file" accept=".json,application/json" required>
+            <button type="submit" class="ghost-button">Импорт JSON</button>
+          </form>
+        </div>
         <form class="filter-row filter-form" method="get" action="{{ url_for('admin_users') }}">
           <input name="q" type="search" value="{{ search_query }}" placeholder="Поиск по логину или почте">
           <select name="role">

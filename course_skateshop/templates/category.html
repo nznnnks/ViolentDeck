@@ -37,7 +37,7 @@
         <h1>{{ category.title }}</h1>
         <p class="subtitle">{{ category.description }}</p>
       </div>
-      <img class="category-image" src="{{ url_for('static', filename=category.image) }}" alt="{{ category.title }}">
+      <img class="category-image" src="{{ get_image_source(category.image) }}" alt="{{ category.title }}">
     </section>
     {% if products %}
     <section class="catalog-grid">

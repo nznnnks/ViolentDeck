@@ -1,11 +1,13 @@
 ﻿from decimal import Decimal, InvalidOperation
+import json
 import random
+import re
 import smtplib
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from uuid import uuid4
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -61,6 +63,20 @@ class User(Base):
     verification_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     password_reset_code: Mapped[str | None] = mapped_column(String(6), nullable=True)
     password_reset_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slug: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    accent: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    image: Mapped[str] = mapped_column(String(500), nullable=False)
+    empty_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    empty_description: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 class Product(Base):
@@ -174,6 +190,11 @@ def normalize_role(role: str | None) -> str:
     return "admin" if role == "admin" else "customer"
 
 
+def normalize_slug(raw_value: str) -> str:
+    slug = re.sub(r"[^\w]+", "-", raw_value.strip().lower(), flags=re.UNICODE)
+    return slug.strip("-")
+
+
 def normalize_order_status(status: str | None) -> str:
     allowed_statuses = {value for value, _ in ORDER_STATUSES}
     return status if status in allowed_statuses else "new"
@@ -192,14 +213,75 @@ def build_redirect_after_login(user: User):
     return redirect(url_for("admin_dashboard" if user.role == "admin" else "shop"))
 
 
-def get_category_by_slug(slug: str) -> dict | None:
-    return next((category for category in PRODUCT_CARDS if category["slug"] == slug), None)
+def get_categories() -> list[Category]:
+    with SessionLocal() as db_session:
+        return list(db_session.scalars(select(Category).order_by(Category.created_at.asc(), Category.id.asc())))
+
+
+def get_category_by_slug(slug: str) -> Category | None:
+    with SessionLocal() as db_session:
+        return db_session.scalar(select(Category).where(Category.slug == slug))
 
 
 def get_image_source(image_value: str) -> str:
     if image_value.startswith(("http://", "https://", "/")):
         return image_value
     return url_for("static", filename=image_value)
+
+
+def make_json_download(filename: str, payload: list[dict]) -> Response:
+    return Response(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        mimetype="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def load_json_upload() -> list[dict] | None:
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        flash("Выберите JSON-файл для импорта.")
+        return None
+
+    try:
+        payload = json.load(upload.stream)
+    except Exception:
+        flash("Не удалось прочитать JSON-файл.")
+        return None
+
+    if not isinstance(payload, list):
+        flash("JSON должен содержать список объектов.")
+        return None
+    return payload
+
+
+def parse_datetime_value(raw_value: str | None) -> datetime | None:
+    if not raw_value:
+        return None
+    try:
+        return datetime.fromisoformat(raw_value)
+    except ValueError:
+        return None
+
+
+def ensure_category_for_import(db_session, category_slug: str) -> Category:
+    category = db_session.scalar(select(Category).where(Category.slug == category_slug))
+    if category is not None:
+        return category
+
+    title = category_slug.replace("-", " ").strip().title() or "Категория"
+    category = Category(
+        slug=category_slug,
+        title=title,
+        description=f"Импортированная категория {title}.",
+        accent=title,
+        image="images/skate.png",
+        empty_title="Товары скоро появятся",
+        empty_description=f"Мы уже готовим каталог для категории {title}.",
+    )
+    db_session.add(category)
+    db_session.flush()
+    return category
 
 
 def get_cart() -> dict[str, int]:
@@ -261,7 +343,7 @@ def build_grouped_orders(
                 "items_count": 0,
                 "username": user.username if user is not None else "Пользователь удалён",
                 "email": user.email if user is not None else "",
-                "items": [],
+                "line_items": [],
                 "categories": set(),
                 "first_product_image_url": product.image_url if product is not None else "",
             }
@@ -278,7 +360,7 @@ def build_grouped_orders(
             if not order_group["first_product_image_url"]:
                 order_group["first_product_image_url"] = product.image_url
 
-        order_group["items"].append(
+        order_group["line_items"].append(
             {
                 "order_row_id": order.id,
                 "product_id": order.product_id,
@@ -292,7 +374,7 @@ def build_grouped_orders(
 
     grouped_list = list(grouped_orders.values())
     for order_group in grouped_list:
-        order_group["items"].sort(key=lambda item: item["order_row_id"])
+        order_group["line_items"].sort(key=lambda item: item["order_row_id"])
         order_group["categories"] = ", ".join(sorted({category for category in order_group["categories"] if category})) or "—"
 
     grouped_list.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
@@ -485,11 +567,40 @@ def ensure_seed_user(seed_user: dict) -> None:
         db_session.commit()
 
 
+def ensure_seed_categories() -> None:
+    with SessionLocal() as db_session:
+        for category_data in PRODUCT_CARDS:
+            category = db_session.scalar(select(Category).where(Category.slug == category_data["slug"]))
+            if category is None:
+                db_session.add(
+                    Category(
+                        slug=category_data["slug"],
+                        title=category_data["title"],
+                        description=category_data["description"],
+                        accent=category_data["accent"],
+                        image=category_data["image"],
+                        empty_title=category_data["empty_title"],
+                        empty_description=category_data["empty_description"],
+                    )
+                )
+                continue
+
+            category.title = category_data["title"]
+            category.description = category_data["description"]
+            category.accent = category_data["accent"]
+            category.image = category_data["image"]
+            category.empty_title = category_data["empty_title"]
+            category.empty_description = category_data["empty_description"]
+
+        db_session.commit()
+
+
 def init_db() -> None:
     Base.metadata.create_all(engine)
     ensure_user_table_columns()
     ensure_order_table_columns()
     backfill_historical_checkout_ids()
+    ensure_seed_categories()
     ensure_seed_user(DEFAULT_USER)
     ensure_seed_user(ADMIN_USER)
 
@@ -797,7 +908,7 @@ def shop():
     user = get_authenticated_user()
     if user is None:
         return redirect(url_for("auth_page"))
-    return render_template("home.html", user=user_to_dict(user), products=PRODUCT_CARDS)
+    return render_template("home.html", user=user_to_dict(user), products=get_categories(), get_image_source=get_image_source)
 
 
 @app.route("/shop/category/<slug>")
@@ -1173,10 +1284,11 @@ def admin_dashboard():
     with SessionLocal() as db_session:
         users_count = db_session.scalar(select(func.count(User.id))) or 0
         products_count = db_session.scalar(select(func.count(Product.id))) or 0
+        categories = list(db_session.scalars(select(Category).order_by(Category.created_at.asc(), Category.id.asc())))
         category_counts = []
-        for category in PRODUCT_CARDS:
-            count = db_session.scalar(select(func.count(Product.id)).where(Product.category_slug == category["slug"])) or 0
-            category_counts.append({"title": category["title"], "count": count})
+        for category in categories:
+            count = db_session.scalar(select(func.count(Product.id)).where(Product.category_slug == category.slug)) or 0
+            category_counts.append({"title": category.title, "count": count})
 
     return render_template("admin_dashboard.html", user=user_to_dict(admin_user), users_count=users_count, products_count=products_count, category_counts=category_counts)
 
@@ -1358,6 +1470,82 @@ def admin_delete_user(user_id: int):
     return redirect(url_for("admin_users", page=page, q=search_query, role=role_filter, verified=verified_filter))
 
 
+@app.get("/admin/users/export")
+def admin_export_users():
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    with SessionLocal() as db_session:
+        users = list(db_session.scalars(select(User).order_by(User.id.asc())))
+
+    payload = [
+        {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "password_hash": user.password_hash,
+            "role": user.role,
+            "is_verified": user.is_verified,
+        }
+        for user in users
+    ]
+    return make_json_download("users-export.json", payload)
+
+
+@app.post("/admin/users/import")
+def admin_import_users():
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    payload = load_json_upload()
+    if payload is None:
+        return redirect(url_for("admin_users"))
+
+    imported_count = 0
+    with SessionLocal() as db_session:
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+
+            username = str(item.get("username", "")).strip().lower()
+            email = str(item.get("email", "")).strip().lower()
+            password_hash = str(item.get("password_hash", "")).strip()
+            if not username or not email or not password_hash:
+                continue
+
+            user = db_session.scalar(select(User).where(User.username == username))
+            if user is None:
+                user = db_session.scalar(select(User).where(User.email == email))
+
+            if user is None:
+                user = User(
+                    username=username,
+                    email=email,
+                    password_hash=password_hash,
+                    role=normalize_role(item.get("role")),
+                    is_verified=bool(item.get("is_verified", False)),
+                )
+                db_session.add(user)
+            else:
+                user.username = username
+                user.email = email
+                user.password_hash = password_hash
+                user.role = normalize_role(item.get("role"))
+                user.is_verified = bool(item.get("is_verified", False))
+                if not user.is_verified:
+                    user.verification_code = None
+                    user.verification_expires_at = None
+
+            imported_count += 1
+
+        db_session.commit()
+
+    flash(f"Импортировано пользователей: {imported_count}.")
+    return redirect(url_for("admin_users"))
+
+
 @app.route("/admin/products")
 def admin_products():
     admin_user = get_admin_user()
@@ -1367,11 +1555,12 @@ def admin_products():
     page = parse_page_arg()
     category_filter = request.args.get("category", "all").strip().lower()
     search_query = request.args.get("q", "").strip()
-    category_slugs = {category["slug"] for category in PRODUCT_CARDS}
-    if category_filter != "all" and category_filter not in category_slugs:
-        category_filter = "all"
 
     with SessionLocal() as db_session:
+        categories = list(db_session.scalars(select(Category).order_by(Category.created_at.asc(), Category.id.asc())))
+        category_slugs = {category.slug for category in categories}
+        if category_filter != "all" and category_filter not in category_slugs:
+            category_filter = "all"
         statement = select(Product)
         if category_filter != "all":
             statement = statement.where(Product.category_slug == category_filter)
@@ -1384,7 +1573,7 @@ def admin_products():
     return render_template(
         "admin_products.html",
         user=user_to_dict(admin_user),
-        categories=PRODUCT_CARDS,
+        categories=categories,
         products=products,
         page=page,
         total_pages=total_pages,
@@ -1469,6 +1658,130 @@ def admin_orders():
     )
 
 
+@app.get("/admin/orders/export")
+def admin_export_orders():
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    with SessionLocal() as db_session:
+        orders = list(db_session.scalars(select(Order).order_by(Order.id.asc())))
+        users = {user.id: user for user in db_session.scalars(select(User))}
+
+    payload = [
+        {
+            "id": order.id,
+            "checkout_id": order.checkout_id,
+            "user_id": order.user_id,
+            "username": users.get(order.user_id).username if users.get(order.user_id) is not None else "",
+            "product_id": order.product_id,
+            "quantity": order.quantity,
+            "total_price": str(order.total_price),
+            "shipping_address": order.shipping_address,
+            "payment_method": order.payment_method,
+            "status": order.status,
+            "created_at": order.created_at.isoformat(),
+        }
+        for order in orders
+    ]
+    return make_json_download("orders-export.json", payload)
+
+
+@app.post("/admin/orders/import")
+def admin_import_orders():
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    payload = load_json_upload()
+    if payload is None:
+        return redirect(url_for("admin_orders"))
+
+    imported_count = 0
+    with SessionLocal() as db_session:
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+
+            quantity = item.get("quantity")
+            product_id = item.get("product_id")
+            shipping_address = str(item.get("shipping_address", "")).strip()
+            total_price_raw = str(item.get("total_price", "")).strip()
+            if not shipping_address:
+                continue
+
+            try:
+                quantity = int(quantity)
+                product_id = int(product_id)
+                total_price = Decimal(total_price_raw)
+            except (TypeError, ValueError, InvalidOperation):
+                continue
+
+            if quantity <= 0:
+                continue
+
+            user = None
+            username = str(item.get("username", "")).strip().lower()
+            user_id = item.get("user_id")
+            if username:
+                user = db_session.scalar(select(User).where(User.username == username))
+            if user is None and user_id is not None:
+                try:
+                    user = db_session.scalar(select(User).where(User.id == int(user_id)))
+                except (TypeError, ValueError):
+                    user = None
+
+            product = db_session.scalar(select(Product).where(Product.id == product_id))
+            if user is None or product is None:
+                continue
+
+            order = None
+            raw_id = item.get("id")
+            if raw_id is not None:
+                try:
+                    order = db_session.scalar(select(Order).where(Order.id == int(raw_id)))
+                except (TypeError, ValueError):
+                    order = None
+
+            created_at = parse_datetime_value(item.get("created_at"))
+            checkout_id = str(item.get("checkout_id", "")).strip() or uuid4().hex
+            payment_method = normalize_payment_method(item.get("payment_method"))
+            status = normalize_order_status(item.get("status"))
+
+            if order is None:
+                order = Order(
+                    user_id=user.id,
+                    checkout_id=checkout_id,
+                    product_id=product.id,
+                    quantity=quantity,
+                    total_price=total_price.quantize(Decimal("0.01")),
+                    shipping_address=shipping_address,
+                    payment_method=payment_method,
+                    status=status,
+                )
+                if created_at is not None:
+                    order.created_at = created_at
+                db_session.add(order)
+            else:
+                order.user_id = user.id
+                order.checkout_id = checkout_id
+                order.product_id = product.id
+                order.quantity = quantity
+                order.total_price = total_price.quantize(Decimal("0.01"))
+                order.shipping_address = shipping_address
+                order.payment_method = payment_method
+                order.status = status
+                if created_at is not None:
+                    order.created_at = created_at
+
+            imported_count += 1
+
+        db_session.commit()
+
+    flash(f"Импортировано заказов: {imported_count}.")
+    return redirect(url_for("admin_orders"))
+
+
 @app.post("/admin/orders/<int:order_id>/update")
 def admin_update_order(order_id: int):
     admin_user = get_admin_user()
@@ -1546,30 +1859,220 @@ def admin_create_product():
     image_url = request.form.get("image_url", "").strip()
     price_raw = request.form.get("price", "").strip()
 
-    category = get_category_by_slug(category_slug)
-    if category is None:
-        flash("Выберите корректную категорию.")
-        return redirect(url_for("admin_products", q=search_query))
-    if not name or not description or not price_raw:
-        flash("Заполните название, описание и цену товара.")
-        return redirect(url_for("admin_products", category=category_slug, q=search_query))
-
-    try:
-        price = Decimal(price_raw)
-    except InvalidOperation:
-        flash("Цена должна быть числом.")
-        return redirect(url_for("admin_products", category=category_slug, q=search_query))
-
-    if price <= 0:
-        flash("Цена должна быть больше нуля.")
-        return redirect(url_for("admin_products", category=category_slug, q=search_query))
-
     with SessionLocal() as db_session:
-        db_session.add(Product(category_slug=category_slug, name=name, description=description, image_url=image_url or category["image"], price=price.quantize(Decimal("0.01"))))
+        category = db_session.scalar(select(Category).where(Category.slug == category_slug))
+        if category is None:
+            flash("Выберите корректную категорию.")
+            return redirect(url_for("admin_products", q=search_query))
+        if not name or not description or not price_raw:
+            flash("Заполните название, описание и цену товара.")
+            return redirect(url_for("admin_products", category=category_slug, q=search_query))
+
+        try:
+            price = Decimal(price_raw)
+        except InvalidOperation:
+            flash("Цена должна быть числом.")
+            return redirect(url_for("admin_products", category=category_slug, q=search_query))
+
+        if price <= 0:
+            flash("Цена должна быть больше нуля.")
+            return redirect(url_for("admin_products", category=category_slug, q=search_query))
+
+        db_session.add(Product(category_slug=category_slug, name=name, description=description, image_url=image_url or category.image, price=price.quantize(Decimal("0.01"))))
         db_session.commit()
 
     flash("Товар добавлен.")
     return redirect(url_for("admin_products", category=category_slug, q=search_query))
+
+
+@app.post("/admin/products/<int:product_id>/update")
+def admin_update_product(product_id: int):
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    page = request.form.get("page", "1")
+    category_filter = request.form.get("category_filter", "all").strip().lower()
+    search_query = request.form.get("q", "").strip()
+    category_slug = request.form.get("category_slug", "").strip()
+    name = request.form.get("name", "").strip()
+    description = request.form.get("description", "").strip()
+    image_url = request.form.get("image_url", "").strip()
+    price_raw = request.form.get("price", "").strip()
+
+    with SessionLocal() as db_session:
+        product = db_session.scalar(select(Product).where(Product.id == product_id))
+        if product is None:
+            flash("Товар не найден.")
+            return redirect(url_for("admin_products", page=page, category=category_filter, q=search_query))
+
+        category = db_session.scalar(select(Category).where(Category.slug == category_slug))
+        if category is None:
+            flash("Выберите корректную категорию.")
+            return redirect(url_for("admin_products", page=page, category=category_filter, q=search_query))
+        if not name or not description or not price_raw:
+            flash("Заполните название, описание и цену товара.")
+            return redirect(url_for("admin_products", page=page, category=category_filter, q=search_query))
+
+        try:
+            price = Decimal(price_raw)
+        except InvalidOperation:
+            flash("Цена должна быть числом.")
+            return redirect(url_for("admin_products", page=page, category=category_filter, q=search_query))
+
+        if price <= 0:
+            flash("Цена должна быть больше нуля.")
+            return redirect(url_for("admin_products", page=page, category=category_filter, q=search_query))
+
+        product.category_slug = category_slug
+        product.name = name
+        product.description = description
+        product.image_url = image_url or category.image
+        product.price = price.quantize(Decimal("0.01"))
+        db_session.commit()
+
+    flash("Товар обновлён.")
+    return redirect(url_for("admin_products", page=page, category=category_filter, q=search_query))
+
+
+@app.post("/admin/categories/create")
+def admin_create_category():
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    title = request.form.get("title", "").strip()
+    description = request.form.get("description", "").strip()
+    image = request.form.get("image", "").strip()
+
+    slug = normalize_slug(title)
+    if not slug or not title or not description:
+        flash("Укажите название и описание категории.")
+        return redirect(url_for("admin_products"))
+
+    if not image:
+        image = "images/skate.png"
+    accent = title
+    empty_title = "Товары скоро появятся"
+    empty_description = f"Мы уже готовим каталог для категории {title}."
+
+    with SessionLocal() as db_session:
+        existing_category = db_session.scalar(select(Category).where(Category.slug == slug))
+        if existing_category is not None:
+            flash("Категория с таким slug уже существует.")
+            return redirect(url_for("admin_products"))
+
+        db_session.add(
+            Category(
+                slug=slug,
+                title=title,
+                description=description,
+                accent=accent,
+                image=image,
+                empty_title=empty_title,
+                empty_description=empty_description,
+            )
+        )
+        db_session.commit()
+
+    flash("Категория добавлена.")
+    return redirect(url_for("admin_products", category=slug))
+
+
+@app.get("/admin/products/export")
+def admin_export_products():
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    with SessionLocal() as db_session:
+        products = list(db_session.scalars(select(Product).order_by(Product.id.asc())))
+
+    payload = [
+        {
+            "id": product.id,
+            "category_slug": product.category_slug,
+            "name": product.name,
+            "description": product.description,
+            "image_url": product.image_url,
+            "price": str(product.price),
+            "created_at": product.created_at.isoformat(),
+        }
+        for product in products
+    ]
+    return make_json_download("products-export.json", payload)
+
+
+@app.post("/admin/products/import")
+def admin_import_products():
+    admin_user = get_admin_user()
+    if admin_user is None:
+        return redirect(url_for("auth_page"))
+
+    payload = load_json_upload()
+    if payload is None:
+        return redirect(url_for("admin_products"))
+
+    imported_count = 0
+    with SessionLocal() as db_session:
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+
+            category_slug = str(item.get("category_slug", "")).strip().lower()
+            name = str(item.get("name", "")).strip()
+            description = str(item.get("description", "")).strip()
+            image_url = str(item.get("image_url", "")).strip()
+            price_raw = str(item.get("price", "")).strip()
+            if not category_slug or not name or not description or not price_raw:
+                continue
+
+            try:
+                price = Decimal(price_raw)
+            except InvalidOperation:
+                continue
+
+            if price <= 0:
+                continue
+
+            category = ensure_category_for_import(db_session, category_slug)
+            product = None
+            raw_id = item.get("id")
+            if raw_id is not None:
+                try:
+                    product = db_session.scalar(select(Product).where(Product.id == int(raw_id)))
+                except (TypeError, ValueError):
+                    product = None
+            if product is None:
+                product = db_session.scalar(select(Product).where(Product.name == name, Product.category_slug == category.slug))
+
+            created_at = parse_datetime_value(item.get("created_at"))
+            if product is None:
+                product = Product(
+                    category_slug=category.slug,
+                    name=name,
+                    description=description,
+                    image_url=image_url or category.image,
+                    price=price.quantize(Decimal("0.01")),
+                )
+                if created_at is not None:
+                    product.created_at = created_at
+                db_session.add(product)
+            else:
+                product.category_slug = category.slug
+                product.name = name
+                product.description = description
+                product.image_url = image_url or category.image
+                product.price = price.quantize(Decimal("0.01"))
+                if created_at is not None:
+                    product.created_at = created_at
+
+            imported_count += 1
+
+        db_session.commit()
+
+    flash(f"Импортировано товаров: {imported_count}.")
+    return redirect(url_for("admin_products"))
 
 
 @app.post("/admin/products/<int:product_id>/delete")

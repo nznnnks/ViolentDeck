@@ -46,7 +46,7 @@
       <article class="profile-card">
         <p class="eyebrow">Состав</p>
         <div class="order-items-list">
-          {% for item in order.items %}
+          {% for item in order.line_items %}
           <article class="order-item-row">
             {% if item.product_image_url %}
             <img class="order-item-thumb" src="{{ get_image_source(item.product_image_url) }}" alt="{{ item.product_name }}">
