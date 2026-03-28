@@ -208,6 +208,46 @@ def build_chart_rows(items: list[dict], value_key: str = "value") -> list[dict]:
     return rows
 
 
+def build_share_rows(items: list[dict], value_key: str = "value") -> list[dict]:
+    total_value = sum((float(item.get(value_key, 0) or 0) for item in items), 0.0)
+    rows = []
+    for item in items:
+        value = float(item.get(value_key, 0) or 0)
+        percent = 0 if total_value <= 0 else round((value / total_value) * 100, 2)
+        row = dict(item)
+        row["percent"] = percent
+        rows.append(row)
+    return rows
+
+
+def build_donut_segments(items: list[dict], palette: list[str] | None = None) -> list[dict]:
+    palette = palette or ["#7c3aed", "#a855f7", "#c4b5fd", "#6d28d9", "#8b5cf6", "#d946ef"]
+    rows = build_share_rows(items)
+
+    segments = []
+    accumulated = 0.0
+    palette_index = 0
+    for row in rows:
+        percent = float(row.get("percent", 0) or 0)
+        if percent <= 0:
+            continue
+        color = row.get("color") or palette[palette_index % len(palette)]
+        palette_index += 1
+        segments.append(
+            {
+                "label": row.get("label", ""),
+                "percent": percent,
+                "dasharray": f"{percent} {100 - percent}",
+                "dashoffset": -accumulated,
+                "color": color,
+            }
+        )
+        accumulated += percent
+        if accumulated >= 100:
+            break
+    return segments
+
+
 def user_to_dict(user: User) -> dict:
     return {
         "id": user.id,
@@ -436,15 +476,9 @@ def build_admin_analytics(db_session) -> dict:
     products_by_id = {product.id: product for product in products}
     grouped_orders = build_grouped_orders(orders, products_by_id, users_by_id)
 
-    verified_users_count = sum(1 for user in users if user.is_verified)
-    admins_count = sum(1 for user in users if user.role == "admin")
-    total_revenue = sum((Decimal(order_group["total_price"]) for order_group in grouped_orders), Decimal("0.00"))
-
     product_units: dict[int, int] = defaultdict(int)
-    product_revenue: dict[int, Decimal] = defaultdict(lambda: Decimal("0.00"))
     product_checkouts: dict[int, set[str]] = defaultdict(set)
     category_units: dict[str, int] = defaultdict(int)
-    category_revenue: dict[str, Decimal] = defaultdict(lambda: Decimal("0.00"))
     category_products_count: dict[str, int] = defaultdict(int)
     for product in products:
         category_products_count[product.category_slug] += 1
@@ -455,51 +489,43 @@ def build_admin_analytics(db_session) -> dict:
             continue
         checkout_id = get_checkout_id(order)
         product_units[product.id] += order.quantity
-        product_revenue[product.id] += Decimal(order.total_price)
         product_checkouts[product.id].add(checkout_id)
         category_units[product.category_slug] += order.quantity
-        category_revenue[product.category_slug] += Decimal(order.total_price)
 
     top_products = []
     for product in products:
         units_sold = product_units.get(product.id, 0)
-        orders_count = len(product_checkouts.get(product.id, set()))
-        revenue = product_revenue.get(product.id, Decimal("0.00"))
-        if units_sold <= 0 and orders_count <= 0 and revenue <= 0:
+        if units_sold <= 0:
             continue
         top_products.append(
             {
                 "label": product.name,
                 "value": units_sold,
-                "description": f"{orders_count} заказов · {format_currency(revenue)}",
             }
         )
     top_products.sort(key=lambda item: (-item["value"], item["label"]))
-    top_products = build_chart_rows(top_products[:7])
+    top_products = build_chart_rows(top_products[:9])
 
     category_sales = []
     category_catalog_rows = []
     for category in categories:
         units_sold = category_units.get(category.slug, 0)
-        revenue = category_revenue.get(category.slug, Decimal("0.00"))
         products_count = category_products_count.get(category.slug, 0)
-        if units_sold > 0 or revenue > 0:
+        if units_sold > 0:
             category_sales.append(
                 {
                     "label": category.title,
                     "value": units_sold,
-                    "description": format_currency(revenue),
                 }
             )
         category_catalog_rows.append(
             {
                 "label": category.title,
                 "value": products_count,
-                "description": category.description,
             }
         )
     category_sales.sort(key=lambda item: (-item["value"], item["label"]))
-    category_sales = build_chart_rows(category_sales[:7])
+    category_sales = build_chart_rows(category_sales[:9])
     category_catalog_rows.sort(key=lambda item: (-item["value"], item["label"]))
     category_catalog_rows = build_chart_rows(category_catalog_rows)
 
@@ -514,12 +540,9 @@ def build_admin_analytics(db_session) -> dict:
             {
                 "label": order_group["username"],
                 "value": 0,
-                "spent": Decimal("0.00"),
-                "description": order_group["email"] or "без почты",
             },
         )
         user_stats["value"] += 1
-        user_stats["spent"] += Decimal(order_group["total_price"])
 
     top_users = []
     for stats in top_users_map.values():
@@ -527,55 +550,41 @@ def build_admin_analytics(db_session) -> dict:
             {
                 "label": stats["label"],
                 "value": stats["value"],
-                "description": f"{stats['description']} · {format_currency(stats['spent'])}",
             }
         )
     top_users.sort(key=lambda item: (-item["value"], item["label"]))
-    top_users = build_chart_rows(top_users[:7])
+    top_users = build_chart_rows(top_users[:9])
 
-    status_rows = build_chart_rows(
-        [
-            {
-                "label": label,
-                "value": order_status_counts.get(value, 0),
-                "description": f"{order_status_counts.get(value, 0)} заказов",
-            }
-            for value, label in ORDER_STATUSES
-            if order_status_counts.get(value, 0) > 0
-        ]
-    )
-    payment_rows = build_chart_rows(
-        [
-            {
-                "label": label,
-                "value": payment_method_counts.get(value, 0),
-                "description": f"{payment_method_counts.get(value, 0)} заказов",
-            }
-            for value, label in PAYMENT_METHODS
-            if payment_method_counts.get(value, 0) > 0
-        ]
-    )
+    status_items = []
+    status_palette = {
+        "new": "#a855f7",
+        "processing": "#8b5cf6",
+        "shipped": "#38bdf8",
+        "done": "#34d399",
+        "cancelled": "#fb7185",
+    }
+    for value, label in ORDER_STATUSES:
+        count_value = order_status_counts.get(value, 0)
+        if count_value <= 0:
+            continue
+        status_items.append({"label": label, "value": count_value, "color": status_palette.get(value)})
+
+    payment_items = []
+    payment_palette = {"cash": "#c4b5fd", "card": "#7c3aed"}
+    for value, label in PAYMENT_METHODS:
+        count_value = payment_method_counts.get(value, 0)
+        if count_value <= 0:
+            continue
+        payment_items.append({"label": label, "value": count_value, "color": payment_palette.get(value)})
 
     return {
         "generated_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
-        "summary": {
-            "users_count": len(users),
-            "verified_users_count": verified_users_count,
-            "admins_count": admins_count,
-            "customers_count": len(users) - admins_count,
-            "products_count": len(products),
-            "categories_count": len(categories),
-            "orders_count": len(grouped_orders),
-            "total_revenue": format_currency(total_revenue),
-            "most_popular_product": top_products[0]["label"] if top_products else "Нет данных",
-            "top_buyer": top_users[0]["label"] if top_users else "Нет данных",
-        },
         "top_products": top_products,
         "category_sales": category_sales,
         "category_catalog_rows": category_catalog_rows,
         "top_users": top_users,
-        "status_rows": status_rows,
-        "payment_rows": payment_rows,
+        "status_segments": build_donut_segments(status_items),
+        "payment_segments": build_donut_segments(payment_items),
     }
 
 
