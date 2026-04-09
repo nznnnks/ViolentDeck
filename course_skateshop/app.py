@@ -248,6 +248,72 @@ def build_donut_segments(items: list[dict], palette: list[str] | None = None) ->
     return segments
 
 
+def build_line_chart(
+    labels: list[str],
+    series: list[dict],
+    value_mode: str = "number",
+    width: int = 680,
+    height: int = 260,
+    padding_left: int = 36,
+    padding_right: int = 20,
+    padding_top: int = 20,
+    padding_bottom: int = 34,
+) -> dict:
+    def format_line_value(raw_value) -> str:
+        if value_mode == "currency":
+            return format_currency(raw_value)
+        return str(int(round(float(raw_value or 0))))
+
+    inner_width = max(1, width - padding_left - padding_right)
+    inner_height = max(1, height - padding_top - padding_bottom)
+    max_value = max((max((float(point or 0) for point in (row.get("values", []) or [0])), default=0) for row in series), default=0)
+    max_value = max(1.0, float(max_value))
+    points_count = max(1, len(labels))
+    step_x = 0 if points_count == 1 else inner_width / (points_count - 1)
+
+    chart_series = []
+    for row in series:
+        points = []
+        for index, raw_value in enumerate(row.get("values", [])):
+            value = float(raw_value or 0)
+            x = padding_left + (step_x * index if points_count > 1 else inner_width / 2)
+            y = padding_top + inner_height - ((value / max_value) * inner_height if max_value else 0)
+            points.append({"x": round(x, 2), "y": round(y, 2), "value": raw_value, "label": format_line_value(raw_value)})
+        chart_series.append(
+            {
+                "label": row.get("label", ""),
+                "color": row.get("color", "#7c3aed"),
+                "points": " ".join(f"{point['x']},{point['y']}" for point in points),
+                "dots": points,
+            }
+        )
+
+    x_labels = []
+    for index, label in enumerate(labels):
+        x = padding_left + (step_x * index if points_count > 1 else inner_width / 2)
+        x_labels.append({"label": label, "x": round(x, 2)})
+
+    grid_lines = []
+    y_labels = []
+    for index in range(4):
+        fraction = index / 3
+        y = padding_top + inner_height * fraction
+        value = max_value * (1 - fraction)
+        grid_lines.append({"y": round(y, 2), "value": value})
+        y_labels.append({"y": round(y + 4, 2), "value": value, "label": format_line_value(value)})
+
+    return {
+        "width": width,
+        "height": height,
+        "baseline_y": padding_top + inner_height,
+        "x_labels": x_labels,
+        "grid_lines": grid_lines,
+        "y_labels": y_labels,
+        "series": chart_series,
+        "has_data": any(any((value or 0) > 0 for value in row.get("values", [])) for row in series),
+    }
+
+
 def user_to_dict(user: User) -> dict:
     return {
         "id": user.id,
@@ -480,17 +546,31 @@ def build_admin_analytics(db_session) -> dict:
     product_checkouts: dict[int, set[str]] = defaultdict(set)
     category_units: dict[str, int] = defaultdict(int)
     category_products_count: dict[str, int] = defaultdict(int)
+    daily_order_counts: dict[str, int] = defaultdict(int)
+    daily_unit_counts: dict[str, int] = defaultdict(int)
+    daily_revenue: dict[str, Decimal] = defaultdict(lambda: Decimal("0.00"))
+    daily_product_units: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for product in products:
         category_products_count[product.category_slug] += 1
+
+    daily_checkout_dates: dict[str, str] = {}
+    for order_group in grouped_orders:
+        order_date = order_group["created_at"].date().isoformat()
+        daily_checkout_dates[order_group["checkout_id"]] = order_date
+        daily_order_counts[order_date] += 1
+        daily_revenue[order_date] += Decimal(order_group["total_price"])
 
     for order in orders:
         product = products_by_id.get(order.product_id)
         if product is None:
             continue
         checkout_id = get_checkout_id(order)
+        order_date = daily_checkout_dates.get(checkout_id, order.created_at.date().isoformat())
         product_units[product.id] += order.quantity
         product_checkouts[product.id].add(checkout_id)
         category_units[product.category_slug] += order.quantity
+        daily_unit_counts[order_date] += order.quantity
+        daily_product_units[product.id][order_date] += order.quantity
 
     top_products = []
     for product in products:
@@ -577,6 +657,62 @@ def build_admin_analytics(db_session) -> dict:
             continue
         payment_items.append({"label": label, "value": count_value, "color": payment_palette.get(value)})
 
+    if daily_order_counts or daily_unit_counts:
+        available_dates = sorted(set(daily_order_counts.keys()) | set(daily_unit_counts.keys()))
+        end_date = datetime.fromisoformat(available_dates[-1]).date()
+    else:
+        end_date = datetime.utcnow().date()
+    timeline_dates = [(end_date - timedelta(days=offset)).isoformat() for offset in range(9, -1, -1)]
+    timeline_labels = [datetime.fromisoformat(day).strftime("%d.%m") for day in timeline_dates]
+
+    purchases_line_chart = build_line_chart(
+        timeline_labels,
+        [
+            {
+                "label": "Заказы",
+                "color": "#38bdf8",
+                "values": [daily_order_counts.get(day, 0) for day in timeline_dates],
+            },
+            {
+                "label": "Товары",
+                "color": "#a855f7",
+                "values": [daily_unit_counts.get(day, 0) for day in timeline_dates],
+            },
+        ],
+    )
+    revenue_line_chart = build_line_chart(
+        timeline_labels,
+        [
+            {
+                "label": "Выручка",
+                "color": "#34d399",
+                "values": [daily_revenue.get(day, Decimal("0.00")) for day in timeline_dates],
+            }
+        ],
+        value_mode="currency",
+        width=1120,
+        height=360,
+        padding_left=84,
+        padding_bottom=42,
+    )
+
+    top_product_ids = [
+        product.id
+        for product in sorted(products, key=lambda item: (-product_units.get(item.id, 0), item.name))
+        if product_units.get(product.id, 0) > 0
+    ][:4]
+    top_product_day_chart = build_line_chart(
+        timeline_labels,
+        [
+            {
+                "label": products_by_id[product_id].name,
+                "color": color,
+                "values": [daily_product_units[product_id].get(day, 0) for day in timeline_dates],
+            }
+            for product_id, color in zip(top_product_ids, ["#7c3aed", "#f97316", "#38bdf8", "#34d399"])
+        ],
+    )
+
     return {
         "generated_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
         "top_products": top_products,
@@ -585,6 +721,9 @@ def build_admin_analytics(db_session) -> dict:
         "top_users": top_users,
         "status_segments": build_donut_segments(status_items),
         "payment_segments": build_donut_segments(payment_items),
+        "purchases_line_chart": purchases_line_chart,
+        "revenue_line_chart": revenue_line_chart,
+        "top_product_day_chart": top_product_day_chart,
     }
 
 
